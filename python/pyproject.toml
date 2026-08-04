@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "offball"
+version = "0.1.0"
+description = "Automated off-the-ball positioning analysis from soccer match footage"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shalom Beraki" }]
+keywords = ["soccer", "football", "computer-vision", "sports-analytics", "tracking"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+# The tactics layer runs on the standard library alone. Everything heavier is
+# an extra, so `pip install offball` stays small and importable anywhere.
+dependencies = []
+
+[project.optional-dependencies]
+vision = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "ultralytics>=8.2",
+]
+api = [
+    "fastapi>=0.111",
+    "pydantic>=2.7",
+    "uvicorn[standard]>=0.30",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "maturin>=1.6",
+]
+all = ["offball[vision,api,dev]"]
+
+[project.scripts]
+offball = "offball.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Shalom11z/offball"
+Documentation = "https://github.com/Shalom11z/offball/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/offball"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: tests that take more than a second (deselect with '-m \"not slow\"')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    # The vision seams take untyped `frame` arrays on purpose, so that this
+    # package imports without numpy or OpenCV installed.
+    "ANN001",
+]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["offball"]
+mypy_path = "src"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "ultralytics.*", "offball_core.*", "numpy.*"]
+ignore_missing_imports = true
