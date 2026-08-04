@@ -76,9 +76,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[api,dev]'
+      # `maturin develop` requires an activated virtualenv, which the runner
+      # does not have. Installing the crate directly lets pip's build
+      # isolation drive maturin as the build backend instead.
       - name: Build and install compiled kernels
-        working-directory: rust/offball-core
-        run: maturin develop --release
+        run: pip install ./rust/offball-core
       # The parity suite skips itself when the extension is absent, so assert
       # it is actually present before trusting a green run.
       - name: Verify the compiled backend is active
