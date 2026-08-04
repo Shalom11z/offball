@@ -186,11 +186,74 @@ A fit is rejected unless it clears all of: at least 4 correspondences,
 `min_inliers` (default 5) in the consensus set, and mean inlier reprojection
 error under `max_error` (default 3m).
 
-### The missing piece
+### The classical detector
 
-`KeypointSource` is a protocol. **No keypoint model ships here.** This is one
-of the two gaps between the current state and end-to-end video analysis. See
-[06 Roadmap](06-roadmap.md).
+`KeypointSource` is a protocol, and
+[`ClassicalKeypointSource`](../python/src/offball/vision/lines.py) implements it
+with no trained model at all.
+
+**Why it matches lines rather than corners.** A homography maps lines to lines,
+so the image of the intersection of two pitch lines is exactly the intersection
+of their images — whether or not paint exists at that point. That matters
+twice over: a line is supported by thousands of pixels where a corner has a
+handful, and most useful intersections (the halfway line crossed with a
+penalty-area edge) are never painted at all.
+
+The stages:
+
+1. Mask the pitch — green in HSV *and* green-dominant in BGR, opened before
+   closing. The opening is load-bearing: without it, green-ish speckle from a
+   crowd survives and the close welds it into a solid false "pitch".
+2. Isolate paint with a morphological top-hat, after a Gaussian blur. The blur
+   is also load-bearing: raw sensor noise survives the morphology as speckle,
+   and Hough will happily find strong lines through it.
+3. Hough for infinite lines, merging duplicates. Duplicates are compared by
+   **distance sampled across the image**, not by rho — rho is measured from the
+   origin, so a fraction of a degree of theta moves it by tens of pixels and
+   genuine duplicates fail to merge.
+4. Split into two families by angle, then order each spatially. Ordering needs
+   the normals aligned first: a family straddling the 0/pi seam contains lines
+   that are nearly parallel but whose normals point opposite ways, which makes
+   their signed offsets meaningless.
+5. Search order-preserving assignments to the template, fit each by
+   least-squares DLT, and score by how much of the projected template lands on
+   real line pixels.
+
+The ordering in step 4 is what makes step 5 tractable: a projective view of a
+plane preserves the order of a pencil of parallel lines, so only monotonic
+assignments need considering.
+
+Scoring against the dense line mask rather than the fitted points is what makes
+it robust — a wrong assignment fits its own four points perfectly and still puts
+the rest of the pitch nowhere near any paint.
+
+### The symmetry that cannot be resolved from one frame
+
+The pitch markings are **exactly invariant** under `x -> length - x` and
+`y -> width - y`. `TEMPLATE_X` maps 0↔105, 5.5↔99.5, 16.5↔88.5 with 52.5 fixed;
+`TEMPLATE_Y` mirrors the same way. A homography absorbs the resulting rotation
+perfectly, so every member of that symmetry group explains the image equally
+well.
+
+**No amount of image processing removes this.** It is a property of the pitch.
+It is resolved with outside information: the previous frame's homography (which
+the source keeps automatically, and `set_prior` sets explicitly), or the known
+camera side and the period's attacking direction.
+
+`last_ambiguous` reports when several candidates tied, which is worth logging
+when calibration goes wrong.
+
+### What has actually been verified
+
+The detector is tested by **rendering a pitch through a known homography and
+checking it is recovered** — clean, with noise, and with lines missing. That is
+a real end-to-end check of the geometry, and it is only possible because the
+answer is known ground truth.
+
+Synthetic frames are clean by construction. Passing those tests means the
+geometry is right; it does **not** mean the detector works on broadcast video.
+Worn pitches, hard shadows, crowd bleed and tight framing are all unmeasured.
+See [06 Roadmap](06-roadmap.md).
 
 ## 5. Projection and velocity
 

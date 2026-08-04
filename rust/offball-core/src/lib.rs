@@ -53,6 +53,25 @@ mod py {
             })
     }
 
+    /// Least-squares homography over *all* correspondences, no RANSAC.
+    ///
+    /// For use when every pair is known to be correct by construction — for
+    /// example intersections derived from already-matched lines. Raises
+    /// `ValueError` on fewer than 4 pairs or a degenerate (collinear) set.
+    #[pyfunction]
+    fn fit_dlt(src: Vec<Pt>, dst: Vec<Pt>) -> PyResult<Vec<f64>> {
+        if src.len() != dst.len() {
+            return Err(PyValueError::new_err("src and dst must be the same length"));
+        }
+        homography::fit_dlt(&to_vecs(&src), &to_vecs(&dst))
+            .map(|h| h.0.to_vec())
+            .ok_or_else(|| {
+                PyValueError::new_err(
+                    "DLT fit failed: need >=4 correspondences in general position",
+                )
+            })
+    }
+
     /// Project points through a flat 9-element homography.
     /// Points on the horizon are returned as `None`.
     #[pyfunction]
@@ -228,6 +247,7 @@ mod py {
             "Rust kernels for the offball soccer analytics platform.",
         )?;
         m.add_function(wrap_pyfunction!(fit_homography, m)?)?;
+        m.add_function(wrap_pyfunction!(fit_dlt, m)?)?;
         m.add_function(wrap_pyfunction!(project, m)?)?;
         m.add_function(wrap_pyfunction!(pitch_control, m)?)?;
         m.add_function(wrap_pyfunction!(space_ownership, m)?)?;

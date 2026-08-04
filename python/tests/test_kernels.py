@@ -235,3 +235,36 @@ def test_nearest_opponent_distance():
     d = kernels.nearest_opponent_distance((0.0, 0.0), [(10.0, 0.0), (3.0, 4.0)])
     assert d == pytest.approx(5.0)
     assert kernels.nearest_opponent_distance((0.0, 0.0), []) is None
+
+
+def test_fit_dlt_uses_every_correspondence():
+    """Exact fit on a consistent set, with no RANSAC sampling involved."""
+    h = _sample_h()
+    src = [(x, y) for x in (0.0, 16.5, 52.5, 105.0) for y in (0.0, 13.84, 54.16, 68.0)]
+    dst = [_apply(h, p) for p in src]
+
+    fitted = kernels.fit_dlt(src, dst)
+    for p, expected in zip(src, dst):
+        got = kernels.project(fitted, [p])[0]
+        assert got is not None
+        assert math.dist(got, expected) < 1e-6
+
+
+def test_fit_dlt_succeeds_where_a_single_ransac_sample_would_fail():
+    """The reason fit_dlt exists.
+
+    On a grid of intersections many 4-point subsets are collinear, so RANSAC
+    with few iterations can fail outright on a set that is perfectly
+    well-conditioned as a whole.
+    """
+    h = _sample_h()
+    src = [(x, y) for x in (0.0, 16.5, 52.5, 105.0) for y in (0.0, 13.84, 54.16, 68.0)]
+    dst = [_apply(h, p) for p in src]
+    assert kernels.fit_dlt(src, dst) is not None
+
+
+def test_fit_dlt_validates_input():
+    with pytest.raises(ValueError, match="same length"):
+        kernels.fit_dlt([(0.0, 0.0)] * 4, [(0.0, 0.0)] * 5)
+    with pytest.raises(ValueError, match="at least 4"):
+        kernels.fit_dlt([(0.0, 0.0)] * 3, [(0.0, 0.0)] * 3)

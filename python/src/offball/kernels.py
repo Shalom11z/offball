@@ -29,6 +29,7 @@ __all__ = [
     "TeamShape",
     "dangerous_space",
     "defensive_lines",
+    "fit_dlt",
     "fit_homography",
     "marking_pressure",
     "offside_line",
@@ -340,6 +341,33 @@ def fit_homography(
     if refined is None:
         raise ValueError("homography refit on consensus set failed")
     return refined, best
+
+
+def fit_dlt(src: Sequence[Point], dst: Sequence[Point]) -> tuple[float, ...]:
+    """Least-squares homography over *all* correspondences, without RANSAC.
+
+    Use this when every pair is correct by construction — for example
+    intersections derived from lines that have already been matched. Running
+    RANSAC on such a set is not merely wasteful: with few iterations it may
+    sample a degenerate subset and fail outright, even though the full set is
+    perfectly well-conditioned.
+
+    Raises:
+        ValueError: fewer than 4 pairs, mismatched lengths, or a degenerate
+            (collinear) configuration.
+    """
+    if len(src) != len(dst):
+        raise ValueError("src and dst must be the same length")
+    if len(src) < 4:
+        raise ValueError("need at least 4 correspondences to fit a homography")
+
+    if _rs is not None:
+        return tuple(_rs.fit_dlt([tuple(p) for p in src], [tuple(p) for p in dst]))
+
+    h = _fit_dlt(src, dst)
+    if h is None:
+        raise ValueError("DLT fit failed: correspondences are degenerate")
+    return h
 
 
 def project(h: Sequence[float], pts: Sequence[Point]) -> list[Point | None]:

@@ -8,9 +8,9 @@ of position, the striker who holds the shoulder of the last defender, the
 winger who finds space nobody can pass to.
 
 > **Status: early alpha.** The tactical layer is implemented, tested and
-> usable today against tracking data from any source. The vision stage is a
-> working skeleton with pluggable model seams — no detector weights or
-> pitch-keypoint model ship with this repository. See
+> usable today against tracking data from any source. Camera calibration works
+> without any trained model, via classical line detection. Player/ball
+> detection still needs weights, which do not ship here. See
 > [What works today](#what-works-today).
 
 ## Why four languages
@@ -34,7 +34,7 @@ otherwise identical.
 ```bash
 git clone https://github.com/Shalom11z/offball.git
 cd offball/python
-pip install -e '.[api,dev]'
+pip install -e '.[calibration,api,dev]'
 offball demo
 ```
 
@@ -105,15 +105,21 @@ difference is the player or the model.
 | Tracking, calibration, possession | Complete. Tested end to end with scripted input |
 | Team assignment | Implemented; needs real footage to validate |
 | Detection | Interface + Ultralytics wrapper. **No weights ship here** |
-| Pitch keypoints | Interface only. **No model ships here** |
+| Pitch keypoints | Classical line detector (no model needed); a learned model is still the better answer |
 | HTTP API | Endpoints and job lifecycle complete; the worker fails loudly rather than returning a fabricated report until a detector is configured |
 | TypeScript SDK | Complete. 29 tests |
 | Postgres schema | Complete, not yet wired to the API |
 
-The honest summary: **you cannot point this at an MP4 today and get a report.**
-The two missing pieces are a fine-tuned detector and a pitch-keypoint model,
-both of which need annotated footage. Everything downstream of them is built
-and tested. See [`docs/06-roadmap.md`](docs/06-roadmap.md).
+The honest summary: **calibration no longer needs a trained model.**
+`ClassicalKeypointSource` finds the painted lines with ordinary image
+processing and matches them to the pitch template, so the geometry works today.
+The remaining gap is detection: a stock YOLO finds players acceptably and the
+ball badly, and the ball is what possession — and therefore the direction of
+every off-ball metric — depends on. See [`docs/06-roadmap.md`](docs/06-roadmap.md).
+
+The classical detector wants a clean, wide broadcast shot. It has been verified
+against synthetically rendered pitches, **not** against real footage; see the
+caveat in [`docs/02-vision-pipeline.md`](docs/02-vision-pipeline.md).
 
 ## Repository layout
 

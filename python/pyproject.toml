@@ -26,9 +26,14 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-vision = [
+# Just enough for classical pitch-line calibration and image work: no torch,
+# so CI can exercise it in seconds rather than minutes.
+calibration = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",
+]
+vision = [
+    "offball[calibration]",
     "ultralytics>=8.2",
 ]
 api = [
@@ -78,6 +83,9 @@ ignore = [
     # idiom Pydantic and FastAPI's OpenAPI generation are built around, and it
     # keeps the enum usable as a plain string on the wire.
     "UP042",
+    # Greek letters and the proper minus sign are used deliberately in the
+    # geometry docstrings, where they match the standard notation.
+    "RUF002",
 ]
 
 [tool.ruff.lint.per-file-ignores]

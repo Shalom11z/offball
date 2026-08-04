@@ -11,33 +11,45 @@ What is missing, in the order it should be built.
 | Tracking, calibration, projection, possession | Complete — tested end to end with scripted input |
 | Team assignment | Implemented; unvalidated against real footage |
 | Detection | Interface + Ultralytics wrapper. **No weights** |
-| Pitch keypoints | Interface only. **No model** |
+| Pitch keypoints | Classical line detector, verified on synthetic pitches. No learned model |
 | HTTP API | Endpoints and lifecycle complete; worker not wired |
 | TypeScript SDK | Complete — 29 tests |
 | Postgres schema | Complete; not wired to the API |
 
-**You cannot point this at an MP4 today and get a report.** Two missing models
-stand between here and that, and both need annotated footage.
+**One missing model stands between here and a report from an MP4:** a detector
+that finds the ball reliably. Calibration no longer needs one — see 1.1 — but
+detection still does, and that needs annotated footage.
 
 ## Phase 1 — Close the loop
 
 The goal is one real match, end to end. Nothing else matters until this works.
 
-### 1.1 Pitch-keypoint model
+### 1.1 Pitch-keypoint model — *classical baseline done*
 
-**The critical path.** Without a homography there are no pitch coordinates, and
-without pitch coordinates there are no metrics.
+`offball.vision.lines.ClassicalKeypointSource` now closes this without any
+training data: it masks the pitch, isolates paint with a morphological top-hat,
+Hough-transforms it into lines, and matches those to the template by searching
+order-preserving assignments scored against the line mask.
 
-Needs a model that locates the named landmarks in
-`Pitch::template_keypoints` — corners, halfway line, penalty areas, centre
-circle, penalty spots — and plugs into the existing `KeypointSource` protocol.
+It resolves the pitch geometry but **not which end is in view** — the markings
+are exactly symmetric under `x -> length - x` and `y -> width - y`, and a
+homography absorbs the difference. That is a property of the pitch, not of the
+method. A prior (the previous frame's homography, or the period's known
+attacking direction) breaks the tie; see `set_prior`.
 
-A heatmap-regression architecture (HRNet-style) over ~2,000 annotated frames
-spanning several stadiums and lighting conditions is the standard approach.
-Segment the pitch lines and fit intersections as an alternative.
+Still worth training a learned model, which would handle worn pitches, hard
+shadows and tight framing that the classical path will not. The baseline is now
+something to measure it against.
 
-Everything downstream — RANSAC, the temporal continuity gate, the quality
-thresholds — is already built and tested against synthetic correspondences.
+When it is trained, it should locate the landmarks in
+`Pitch::template_keypoints` and plug into the same `KeypointSource` protocol —
+no downstream change. A heatmap-regression architecture (HRNet-style) over
+~2,000 annotated frames spanning several stadiums and lighting conditions is
+the standard approach; SoccerNet-Calibration is public and already annotated
+for exactly this.
+
+**The classical path is verified on synthetic renders only.** Its real-footage
+behaviour is unmeasured, and that measurement is 1.3 below.
 
 ### 1.2 Fine-tuned detector
 
@@ -151,8 +163,8 @@ Worth stating so the boundaries are clear:
 
 The most useful contributions right now, in order:
 
-1. Annotated pitch-keypoint data.
-2. Ball-detection annotations.
+1. Ball-detection annotations — the current bottleneck.
+2. Annotated pitch-keypoint data, to replace the classical baseline.
 3. Any match with both footage and third-party tracking data, for validation.
 
 Code contributions should keep the two invariants the codebase is built on:

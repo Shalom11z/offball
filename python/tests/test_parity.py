@@ -212,3 +212,28 @@ def test_horizon_projection_matches(py):
     h = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -5.0)
     assert kernels.project(h, [(5.0, 2.0)])[0] is None
     assert py.project(h, [(5.0, 2.0)])[0] is None
+
+
+def test_fit_dlt_matches(py):
+    h = (1.2, 0.35, 40.0, -0.15, 0.9, 25.0, 0.0006, 0.0011, 1.0)
+
+    def apply(p):
+        w = h[6] * p[0] + h[7] * p[1] + h[8]
+        return ((h[0] * p[0] + h[1] * p[1] + h[2]) / w, (h[3] * p[0] + h[4] * p[1] + h[5]) / w)
+
+    # A grid of intersections, the shape the line matcher actually produces.
+    src = [(x, y) for x in (0.0, 16.5, 52.5, 105.0) for y in (0.0, 13.84, 54.16, 68.0)]
+    dst = [apply(p) for p in src]
+    assert kernels.fit_dlt(src, dst) == pytest.approx(py.fit_dlt(src, dst), abs=1e-7)
+
+
+def test_fit_dlt_rejects_degenerate_input_in_both_backends(py):
+    collinear_src = [(float(i), float(i)) for i in range(6)]
+    collinear_dst = [(2.0 * i, 2.0 * i) for i in range(6)]
+    for mod in (kernels, py):
+        with pytest.raises(ValueError):
+            mod.fit_dlt(collinear_src, collinear_dst)
+        with pytest.raises(ValueError):
+            mod.fit_dlt([(0.0, 0.0)] * 3, [(0.0, 0.0)] * 3)
+        with pytest.raises(ValueError, match="same length"):
+            mod.fit_dlt([(0.0, 0.0)] * 4, [(0.0, 0.0)] * 5)
