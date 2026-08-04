@@ -66,6 +66,15 @@ against ground truth:
 offball benchmark data/soccernet/calibration-2023/test --soccernet
 ```
 
+When a number says calibration failed, look at *why*:
+
+```bash
+offball inspect match.mp4 --failures-only
+```
+
+That writes the frame with the model's pitch drawn on it. If the green lines
+sit on the paint, calibration is right; if they float off it, it is not.
+
 ## What it measures
 
 All metrics are computed in pitch metres after the frame homography, with the

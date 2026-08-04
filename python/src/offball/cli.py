@@ -6,6 +6,7 @@
     offball demo --json               # machine-readable
     offball analyse match.mp4         # analyse real footage (needs the vision extra)
     offball benchmark match.mp4       # how often does calibration succeed?
+    offball inspect match.mp4         # render overlays to see *why* it failed
     offball serve                     # start the HTTP API
     offball info                      # environment and backend check
 """
@@ -216,6 +217,59 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_inspect(args: argparse.Namespace) -> int:
+    """Render calibration overlays so failures can be seen, not guessed at."""
+    import cv2
+
+    from .benchmark import _iter_images
+    from .vision.calibration import CalibrationConfig, calibrate_frame
+    from .vision.lines import ClassicalKeypointSource
+    from .viz import overlay_calibration
+
+    path = Path(args.source)
+    if not path.exists():
+        print(f"error: no such file or directory: {path}", file=sys.stderr)
+        return 2
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    source = ClassicalKeypointSource()
+    config = CalibrationConfig()
+    written = failed = 0
+
+    for i, frame in enumerate(_iter_images(path, limit=args.limit, stride=args.stride)):
+        pairs = source.keypoints(frame)
+        cal = calibrate_frame(pairs, config) if pairs else None
+        if cal is None:
+            failed += 1
+        label = (
+            f"frame {i}  support={source.last_support:.2f}  lines={source.last_line_count}"
+        )
+        if cal is not None:
+            label += f"  err={cal.error:.2f}m  inliers={cal.inliers}"
+
+        # Failures are the whole point of this command; --failures-only drops
+        # the successes so a long clip does not bury them.
+        if args.failures_only and cal is not None:
+            continue
+
+        image = overlay_calibration(
+            frame, cal.matrix if cal else None, label=label
+        )
+        name = out_dir / f"frame_{i:05d}{'_FAIL' if cal is None else ''}.jpg"
+        cv2.imwrite(str(name), image)
+        written += 1
+
+    print(f"wrote {written} overlay(s) to {out_dir}")
+    print(f"{failed} frame(s) failed to calibrate")
+    if failed:
+        print("Open a *_FAIL image: if the pitch is clearly visible there, the")
+        print("detector is at fault; if it is a close-up or replay, abstaining")
+        print("is correct behaviour.")
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -271,6 +325,17 @@ def build_parser() -> argparse.ArgumentParser:
                               "ground truth comes from its line annotations")
     p_bench.add_argument("--json", action="store_true")
     p_bench.set_defaults(func=_cmd_benchmark)
+
+    p_inspect = sub.add_parser(
+        "inspect", help="render calibration overlays to look at failures"
+    )
+    p_inspect.add_argument("source", help="video file or directory of frames")
+    p_inspect.add_argument("--out", default="overlays", help="output directory")
+    p_inspect.add_argument("--stride", type=int, default=25)
+    p_inspect.add_argument("--limit", type=int, default=40)
+    p_inspect.add_argument("--failures-only", action="store_true",
+                           help="only write frames that failed to calibrate")
+    p_inspect.set_defaults(func=_cmd_inspect)
 
     p_serve = sub.add_parser("serve", help="run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
