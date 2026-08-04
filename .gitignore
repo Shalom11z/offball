@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
+# Node
+node_modules/
+*.tsbuildinfo
+ts/**/dist/
+
+# Models and media — these belong in object storage or Git LFS, never in the
+# repo. A single YOLO checkpoint is ~130MB and match footage is far larger.
+*.pt
+*.pth
+*.onnx
+*.engine
+*.mp4
+*.mkv
+*.avi
+*.mov
+data/
+weights/
+checkpoints/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
