@@ -82,17 +82,100 @@ def _cmd_demo(args: argparse.Namespace) -> int:
 
 
 def _cmd_analyse(args: argparse.Namespace) -> int:
+    """Run the full pipeline over a real video file."""
     path = Path(args.video)
     if not path.exists():
         print(f"error: no such file: {path}", file=sys.stderr)
         return 2
-    print(
-        "error: video analysis needs a configured detector and pitch-keypoint model.\n"
-        "       Neither ships with this repository yet — see docs/06-roadmap.md.\n"
-        "       Run 'offball demo' to exercise the tactics layer in the meantime.",
-        file=sys.stderr,
+
+    try:
+        from .pipeline import Pipeline, PipelineConfig
+        from .tactics.offball import ScoringConfig
+        from .video import probe, read_frames
+        from .vision.detection import DetectorConfig, YoloDetector
+        from .vision.lines import ClassicalKeypointSource
+        from .vision.teams import TeamAssigner
+    except ImportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    meta = probe(path)
+    fps = meta.fps / args.stride
+    print(f"{path.name}: {meta.width}x{meta.height}, {meta.fps:.2f} fps, "
+          f"{meta.frame_count} frames ({meta.duration / 60:.1f} min)")
+    print(f"analysing every {args.stride} frame(s) -> effective {fps:.1f} fps")
+    print(f"detector: {args.weights} | kernels: {BACKEND}")
+    if args.limit:
+        print(f"limited to {args.limit} frames")
+    print()
+
+    pipeline = Pipeline(
+        detector=YoloDetector(
+            args.weights, DetectorConfig(confidence=args.confidence, image_size=args.imgsz)
+        ),
+        keypoints=ClassicalKeypointSource(),
+        team_assigner=TeamAssigner(),
+        config=PipelineConfig(
+            fps=fps,
+            pitch_length=args.pitch_length,
+            pitch_width=args.pitch_width,
+            scoring=ScoringConfig(
+                pitch_length=args.pitch_length, pitch_width=args.pitch_width
+            ),
+        ),
     )
-    return 1
+
+    frames = read_frames(path, stride=args.stride, limit=args.limit)
+    result = pipeline.run(frames)
+
+    total = len(result.frames)
+    print("--- run quality " + "-" * 45)
+    print(f"  frames analysed      {total}")
+    print(f"  calibrated           {result.calibrated_frames} "
+          f"({result.calibrated_frames / max(total, 1):.0%})")
+    print(f"  calibrations rejected{result.rejected_calibrations:>5}")
+    print(f"  ball detected        {result.ball_detected_frames} "
+          f"({result.ball_detected_frames / max(total, 1):.0%})")
+    print(f"  ball after repair    {result.ball_recovered_frames} "
+          f"({result.ball_recovered_frames / max(total, 1):.0%})")
+    print(f"  frames scored        {result.report.frames_scored} "
+          f"(coverage {result.report.coverage:.0%})")
+    print()
+
+    if result.report.coverage < 0.6:
+        print("  NOTE: coverage below 60%. These figures are provisional; the")
+        print("  usual cause is calibration failing on close-ups and replays.")
+        print()
+
+    if args.json:
+        json.dump(result.report.to_dict(), sys.stdout, indent=2, default=str)
+        print()
+        return 0
+
+    _print_report(result.report)
+    return 0
+
+
+def _print_report(report) -> None:
+    """Shared table output for `demo` and `analyse`."""
+    for team in report.teams:
+        print(f"[{team.team.value}] in possession for {team.duration:.1f}s")
+        print(f"  controlled space      {team.median_controlled_space:8.0f} m^2 (median)")
+        print(f"  dangerous space       {team.median_dangerous_space:8.0f}     (threat-weighted)")
+        print(f"  attacking block area  {team.median_attacking_hull:8.0f} m^2")
+        print(f"  defending block area  {team.median_defending_hull:8.0f} m^2")
+        print(f"  passing options       {team.mean_passing_options:8.1f} (mean)")
+        print()
+
+    print(f"{'track':>6} {'frames':>7} {'space':>8} {'avail':>7} {'offside':>8} "
+          f"{'margin':>8} {'lines':>6} {'press':>6}")
+    for p in report.players:
+        margin = "  n/a" if p.median_offside_margin is None else f"{p.median_offside_margin:6.1f}m"
+        print(
+            f"{p.track_id:>6} {p.frames:>7} {p.median_space_owned:7.0f}m\u00b2 "
+            f"{p.availability_rate:6.0%} {p.offside_rate:7.0%} {margin:>8} "
+            f"{p.mean_lines_broken:6.2f} {p.mean_pressure:6.2f}"
+        )
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -120,6 +203,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_analyse = sub.add_parser("analyse", help="analyse a match video")
     p_analyse.add_argument("video", help="path to the footage")
+    p_analyse.add_argument("--weights", default="yolov8x.pt",
+                           help="detector checkpoint (downloaded on first use)")
+    p_analyse.add_argument("--stride", type=int, default=5,
+                           help="analyse every Nth frame; raises throughput, "
+                                "degrades tracking identity")
+    p_analyse.add_argument("--limit", type=int, default=None,
+                           help="stop after this many analysed frames")
+    p_analyse.add_argument("--confidence", type=float, default=0.25)
+    p_analyse.add_argument("--imgsz", type=int, default=1280,
+                           help="inference resolution; below 1280 the ball is lost")
+    p_analyse.add_argument("--pitch-length", type=float, default=105.0)
+    p_analyse.add_argument("--pitch-width", type=float, default=68.0)
+    p_analyse.add_argument("--json", action="store_true")
     p_analyse.set_defaults(func=_cmd_analyse)
 
     p_serve = sub.add_parser("serve", help="run the HTTP API")

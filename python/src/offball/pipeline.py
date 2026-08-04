@@ -2,7 +2,9 @@
 
 Stage order, and why:
 
-1. **Detect** — players and ball per frame.
+Per frame (:meth:`Pipeline.process_frame`):
+
+1. **Detect** — players and ball.
 2. **Track** — stable identities. Must precede team assignment, because the
    per-track colour vote is what makes assignment stable.
 3. **Calibrate** — fit and temporally gate the frame homography.
@@ -10,14 +12,21 @@ Stage order, and why:
 5. **Estimate velocity** — finite differences in *pitch* space, smoothed.
    Doing this in pitch space rather than pixel space matters: a pixel
    displacement means a different real distance at each end of the pitch.
-6. **Assign possession** — nearest player to the ball, with hysteresis.
-7. **Score** — off-the-ball metrics per frame.
-8. **Aggregate** — the match report.
 
-The pipeline is deliberately synchronous and single-pass. Parallelising it is a
-scaling concern handled at the job level (one worker per match), not inside the
-per-frame loop, where the ordering dependencies above make it awkward and the
-Rust kernels already carry the numeric load.
+Then over the whole sequence (:meth:`Pipeline.run`):
+
+6. **Reconstruct the ball** — reject impossible jumps, interpolate across
+   occlusions. This has to look forward as well as back, which is why it is a
+   pass rather than a per-frame step, and it is what stops a detector's missed
+   ball frames from silently discarding most of the match.
+7. **Assign possession** — nearest player to the repaired ball, with
+   hysteresis.
+8. **Score** — off-the-ball metrics per frame.
+9. **Aggregate** — the match report.
+
+Parallelising is a scaling concern handled at the job level (one worker per
+match), not inside the per-frame loop, where the ordering dependencies above
+make it awkward and the Rust kernels already carry the numeric load.
 """
 
 from __future__ import annotations
@@ -25,11 +34,12 @@ from __future__ import annotations
 import math
 from collections import defaultdict, deque
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .tactics.offball import FrameScore, ScoringConfig, score_frame
 from .tactics.report import MatchReport, build_report
 from .types import Detection, FrameState, PlayerObservation, Point, Team
+from .vision.ball import BallConfig, smooth_ball_track
 from .vision.calibration import (
     CalibrationConfig,
     HomographySmoother,
@@ -48,6 +58,8 @@ class PipelineConfig:
     tracker: TrackerConfig = field(default_factory=TrackerConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
+    #: Ball trajectory reconstruction: outlier rejection and gap interpolation.
+    ball: BallConfig = field(default_factory=BallConfig)
     #: Frames of position history used for the velocity estimate. Five frames
     #: at 25fps is 0.2s: long enough to suppress tracking jitter, short enough
     #: to still register a sharp change of direction.
@@ -152,6 +164,11 @@ class PipelineResult:
     calibrated_frames: int
     #: Calibrations rejected by the temporal gate.
     rejected_calibrations: int
+    #: Frames in which the ball was actually detected.
+    ball_detected_frames: int = 0
+    #: Frames with a ball position after gap interpolation. The difference
+    #: against `ball_detected_frames` is what the reconstruction recovered.
+    ball_recovered_frames: int = 0
 
 
 class Pipeline:
@@ -250,27 +267,62 @@ class Pipeline:
     def run(self, frames: Iterable) -> PipelineResult:
         """Process a sequence of frames and build the match report.
 
+        Runs in passes rather than scoring inline, because two stages need to
+        see the whole sequence:
+
+        * **Ball reconstruction** interpolates across occlusions, which needs
+          the observation *after* a gap as well as before it. Detectors miss
+          the ball often, and scoring only the frames where it happened to be
+          visible would discard most of the match.
+        * **Possession** is then re-derived from the repaired ball track, so it
+          is not fragmented by those same gaps.
+
         ``frames`` may be any iterable, including a generator reading video
-        lazily — nothing here holds the pixel data beyond the current frame.
+        lazily — no pixel data is held beyond the current frame, though the
+        per-frame results are retained.
         """
         self.reset()
-        states: list[FrameState] = []
-        scores: list[FrameScore] = []
-        calibrated = 0
+        cfg = self.config
 
+        # Pass 1: vision. Possession assigned here is provisional.
+        states: list[FrameState] = []
+        calibrated = 0
         for i, frame in enumerate(frames):
             state = self.process_frame(frame, i)
             states.append(state)
             if state.is_calibrated:
                 calibrated += 1
-            score = score_frame(state, self.config.scoring)
-            if score is not None:
-                scores.append(score)
+
+        # Pass 2: repair the ball trajectory.
+        raw_ball = [s.ball_pitch_xy for s in states]
+        detected_ball = sum(1 for p in raw_ball if p is not None)
+        ball = smooth_ball_track(raw_ball, cfg.fps, cfg.ball)
+        recovered_ball = sum(1 for p in ball if p is not None)
+
+        # Pass 3: re-derive possession from the repaired track.
+        self.possession.reset()
+        states = [
+            replace(
+                state,
+                ball_pitch_xy=xy,
+                attacking_team=self.possession.update(xy, state.players),
+            )
+            for state, xy in zip(states, ball, strict=True)
+        ]
+
+        # Pass 4: score.
+        scores = [
+            score
+            for score in (score_frame(state, cfg.scoring) for state in states)
+            if score is not None
+        ]
 
         return PipelineResult(
-            report=build_report(scores, len(states), self.config.fps),
+            report=build_report(scores, len(states), cfg.fps),
             frames=tuple(states),
             scores=tuple(scores),
             calibrated_frames=calibrated,
             rejected_calibrations=self.smoother.rejected,
+            ball_detected_frames=detected_ball,
+            ball_recovered_frames=recovered_ball,
         )
