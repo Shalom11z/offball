@@ -1,0 +1,27 @@
+[package]
+name = "offball-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Hot-path geometry and pitch-control kernels for the offball soccer analytics platform"
+license = "MIT"
+repository = "https://github.com/Shalom11z/offball"
+
+[lib]
+name = "offball_core"
+# `cdylib` for the Python extension module, `rlib` so `cargo test` and other
+# Rust consumers can link against it.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"], optional = true }
+
+[features]
+default = []
+# Enabled by maturin when building the Python extension. Kept optional so
+# `cargo test` runs without a Python interpreter present.
+python = ["dep:pyo3"]
+
+[profile.release]
+lto = true
+codegen-units = 1

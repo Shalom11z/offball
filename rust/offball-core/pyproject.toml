@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.6,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "offball-core"
+description = "Compiled geometry and pitch-control kernels for offball"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+# `python` gates the PyO3 dependency, so `cargo test` still runs without a
+# Python interpreter available.
+features = ["python", "pyo3/extension-module"]
+module-name = "offball_core"
+strip = true
