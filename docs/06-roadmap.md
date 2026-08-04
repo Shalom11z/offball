@@ -24,7 +24,13 @@ detection still does, and that needs annotated footage.
 
 The goal is one real match, end to end. Nothing else matters until this works.
 
-### 1.1 Pitch-keypoint model — *classical baseline done*
+### 1.1 Pitch-keypoint model — *now the top priority, with evidence*
+
+> **Measured:** the classical detector calibrated **0 of 120 frames** on a real
+> Premier League half. A broadcast centre view offers one straight pitch line
+> and a circle; straight-line matching cannot work on it. See
+> [02 Vision pipeline](02-vision-pipeline.md). Either fit the centre circle as
+> an ellipse, or train this model.
 
 `offball.vision.lines.ClassicalKeypointSource` now closes this without any
 training data: it masks the pitch, isolates paint with a morphological top-hat,

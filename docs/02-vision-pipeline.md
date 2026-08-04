@@ -252,8 +252,40 @@ answer is known ground truth.
 
 Synthetic frames are clean by construction. Passing those tests means the
 geometry is right; it does **not** mean the detector works on broadcast video.
-Worn pitches, hard shadows, crowd bleed and tight framing are all unmeasured.
-See [06 Roadmap](06-roadmap.md).
+
+### Measured on real broadcast footage: it does not work
+
+**Man Utd v Arsenal, full first half (SoccerNet, 720p25). Calibration rate:
+0 of 120 frames sampled across the half. Only 3% of frames produced any
+correspondences at all.**
+
+This is structural, not a threshold in need of tuning. Every stage before
+matching behaves: the pitch mask finds 74-98% green, and Hough returns 6-16
+lines per frame. The problem is *what those lines are*.
+
+A standard broadcast centre view contains exactly **one** straight pitch line —
+the halfway line — plus the centre circle. The near touchline is out of frame,
+the far one is lost against the advertising hoardings, and neither penalty area
+is visible. The matcher needs at least two lines in each of the two pitch
+directions (see `_candidates`), and that information is not in the picture.
+
+Worse, most lines Hough returns are artefacts: **chords of the centre circle**,
+which a straight-line transform fragments into a dozen strong votes, plus edges
+from hoardings and mown stripes. On the frame inspected, 15 of 16 detected lines
+were spurious; only the halfway line was real.
+
+Two ways forward, neither of them more tuning:
+
+1. **Fit the centre circle as an ellipse.** A circle maps to an ellipse under a
+   homography; its known 9.15m radius, plus the fact that its centre lies on the
+   halfway line, adds enough constraint to solve exactly the shot that dominates
+   broadcast footage.
+2. **Train the learned keypoint model** ([06 Roadmap](06-roadmap.md)). This is
+   what the field does, and the measurement above is the evidence for why.
+
+The classical detector is kept: it is correct where it applies, costs nothing,
+and is an honest baseline to measure a learned model against. It should not be
+relied on for broadcast footage.
 
 ## 5. Projection and velocity
 
