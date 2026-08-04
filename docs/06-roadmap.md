@@ -87,8 +87,15 @@ d.downloadDataTask(task='calibration-2023', split=['test'], password='YOUR_PASSW
 "
 ```
 
-Then write a small adapter turning its line annotations into the nine-number
-homography list `benchmark.load_ground_truth` expects, and the numbers follow.
+The adapter is written and tested (`offball.datasets.soccernet`), so once the
+files exist a single command produces the numbers:
+
+```bash
+offball benchmark data/soccernet/calibration-2023/test --soccernet
+```
+
+It reports calibration rate, line support, and **error in metres against
+SoccerNet's ground truth**, as median / p90 / worst.
 
 Still needed beyond calibration:
 

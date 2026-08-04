@@ -59,6 +59,13 @@ Measure how well calibration copes with a piece of real footage:
 offball benchmark match.mp4
 ```
 
+With a SoccerNet-Calibration split, the same command reports error in metres
+against ground truth:
+
+```bash
+offball benchmark data/soccernet/calibration-2023/test --soccernet
+```
+
 ## What it measures
 
 All metrics are computed in pitch metres after the frame homography, with the
@@ -125,7 +132,9 @@ every off-ball metric — depends on. See [`docs/06-roadmap.md`](docs/06-roadmap
 
 The classical detector wants a clean, wide broadcast shot. It has been verified
 against synthetically rendered pitches, **not** against real footage; see the
-caveat in [`docs/02-vision-pipeline.md`](docs/02-vision-pipeline.md).
+caveat in [`docs/02-vision-pipeline.md`](docs/02-vision-pipeline.md). The
+harness to measure it properly is built — `offball benchmark --soccernet` —
+and needs only the (NDA-gated) SoccerNet download to produce real figures.
 
 ## Repository layout
 
