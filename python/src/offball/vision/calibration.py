@@ -22,18 +22,19 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from ..kernels import fit_homography, project
 from ..types import Point
 
 __all__ = [
+    "Calibration",
+    "CalibrationConfig",
+    "HomographySmoother",
     "KeypointSource",
     "ScriptedKeypoints",
-    "Calibration",
-    "HomographySmoother",
-    "CalibrationConfig",
 ]
 
 
@@ -47,7 +48,7 @@ class KeypointSource(Protocol):
     name them.
     """
 
-    def keypoints(self, frame) -> list[tuple[Point, Point]]:  # noqa: ANN001
+    def keypoints(self, frame) -> list[tuple[Point, Point]]:
         ...
 
 
@@ -65,7 +66,7 @@ class ScriptedKeypoints:
     def reset(self) -> None:
         self._index = 0
 
-    def keypoints(self, frame=None) -> list[tuple[Point, Point]]:  # noqa: ANN001
+    def keypoints(self, frame=None) -> list[tuple[Point, Point]]:
         if self._index >= len(self._script):
             return []
         out = self._script[self._index]
@@ -136,7 +137,7 @@ def calibrate_frame(
 
     projected = project(matrix, [src[i] for i in inliers])
     errors = []
-    for p, i in zip(projected, inliers):
+    for p, i in zip(projected, inliers, strict=True):
         if p is None:
             return None
         errors.append(math.hypot(p[0] - dst[i][0], p[1] - dst[i][1]))

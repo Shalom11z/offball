@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import statistics
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import asdict, dataclass
 
 from ..types import Team
 from .offball import FrameScore
 
-__all__ = ["PlayerSummary", "TeamSummary", "MatchReport", "build_report"]
+__all__ = ["MatchReport", "PlayerSummary", "TeamSummary", "build_report"]
 
 
 def _median(values: Sequence[float]) -> float:

@@ -24,11 +24,11 @@ Known limits, also in ``docs/02-vision-pipeline.md``:
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from ..types import BBox, PlayerObservation, Point, Team
+from ..types import BBox, PlayerObservation, Team
 
-__all__ = ["TeamAssigner", "KitProfile", "identify_goalkeepers"]
+__all__ = ["KitProfile", "TeamAssigner", "identify_goalkeepers"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +46,7 @@ class KitProfile:
         return self.separation >= 40.0
 
 
-def _torso_crop(frame, bbox: BBox):  # noqa: ANN001
+def _torso_crop(frame, bbox: BBox):
     """The upper-middle of the bbox: shirt, not shorts, socks, or turf."""
     h, w = frame.shape[:2]
     x1 = max(0, int(bbox.x1 + bbox.width * 0.25))
@@ -58,7 +58,7 @@ def _torso_crop(frame, bbox: BBox):  # noqa: ANN001
     return frame[y1:y2, x1:x2]
 
 
-def dominant_colour(frame, bbox: BBox) -> tuple[float, float, float] | None:  # noqa: ANN001
+def dominant_colour(frame, bbox: BBox) -> tuple[float, float, float] | None:
     """Mean RGB of a player's torso, with pitch-green pixels removed.
 
     Returns ``None`` when the crop is empty or is essentially all grass, which
@@ -111,7 +111,7 @@ def _kmeans2(points: list[tuple[float, float, float]], iterations: int = 25):
                 labels[idx] = lab
                 changed = True
         for c in (0, 1):
-            members = [p for p, lab in zip(points, labels) if lab == c]
+            members = [p for p, lab in zip(points, labels, strict=True) if lab == c]
             if members:
                 centres[c] = tuple(
                     sum(m[k] for m in members) / len(members) for k in range(3)
@@ -179,7 +179,7 @@ class TeamAssigner:
         return Team.HOME if dh <= da else Team.AWAY
 
     def assign(
-        self, frame, observations: list[PlayerObservation]  # noqa: ANN001
+        self, frame, observations: list[PlayerObservation]
     ) -> list[PlayerObservation]:
         """Label observations with a team, using the running per-track vote.
 
@@ -199,10 +199,7 @@ class TeamAssigner:
 
             votes = self._votes[obs.track_id]
             total = sum(votes.values())
-            if total >= self._min_votes:
-                team = votes.most_common(1)[0][0]
-            else:
-                team = Team.UNKNOWN
+            team = votes.most_common(1)[0][0] if total >= self._min_votes else Team.UNKNOWN
             out.append(
                 PlayerObservation(
                     track_id=obs.track_id,

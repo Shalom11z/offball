@@ -22,12 +22,12 @@ from .kernels import BACKEND, using_rust
 from .types import BBox, Detection, FrameState, PlayerObservation, Team
 
 __all__ = [
-    "__version__",
     "BACKEND",
-    "using_rust",
     "BBox",
     "Detection",
     "FrameState",
     "PlayerObservation",
     "Team",
+    "__version__",
+    "using_rust",
 ]

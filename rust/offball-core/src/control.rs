@@ -32,7 +32,11 @@ pub struct PlayerState {
 
 impl PlayerState {
     pub fn new(pos: Vec2, vel: Vec2, is_attacking: bool) -> Self {
-        Self { pos, vel, is_attacking }
+        Self {
+            pos,
+            vel,
+            is_attacking,
+        }
     }
 
     /// Stationary player, for tests and for frames where velocity is unknown.
@@ -55,7 +59,11 @@ pub struct ControlParams {
 
 impl Default for ControlParams {
     fn default() -> Self {
-        Self { reaction_time: 0.7, max_speed: 7.8, tau: 0.45 }
+        Self {
+            reaction_time: 0.7,
+            max_speed: 7.8,
+            tau: 0.45,
+        }
     }
 }
 
@@ -131,7 +139,12 @@ pub fn pitch_control(
         }
     }
 
-    Grid { nx, ny, cell_area, values }
+    Grid {
+        nx,
+        ny,
+        cell_area,
+        values,
+    }
 }
 
 /// Area (m^2) each player is the fastest to reach, i.e. a velocity-aware
@@ -261,7 +274,10 @@ mod tests {
         let gb = pitch_control(&b, &pitch, 16, 16, &ControlParams::default());
         for (va, vb) in ga.values.iter().zip(gb.values.iter()) {
             assert!((0.0..=1.0).contains(va));
-            assert!((va + vb - 1.0).abs() < 1e-9, "swapping teams must mirror control");
+            assert!(
+                (va + vb - 1.0).abs() < 1e-9,
+                "swapping teams must mirror control"
+            );
         }
     }
 
@@ -287,8 +303,14 @@ mod tests {
         ];
         let owned = player_space_ownership(&players, &pitch, 60, 40, &ControlParams::default());
         let sum: f64 = owned.iter().sum();
-        assert!((sum - pitch.area()).abs() < 1e-6, "ownership must tile the pitch");
-        assert!(owned.iter().all(|&a| a > 0.0), "each player owns their own neighbourhood");
+        assert!(
+            (sum - pitch.area()).abs() < 1e-6,
+            "ownership must tile the pitch"
+        );
+        assert!(
+            owned.iter().all(|&a| a > 0.0),
+            "each player owns their own neighbourhood"
+        );
     }
 
     #[test]

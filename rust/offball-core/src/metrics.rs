@@ -59,7 +59,11 @@ pub fn passing_lane(ball: Vec2, receiver: Vec2, defenders: &[Vec2], corridor: f6
             blockers += 1;
         }
     }
-    LaneVerdict { open: blockers == 0, clearance, blockers }
+    LaneVerdict {
+        open: blockers == 0,
+        clearance,
+        blockers,
+    }
 }
 
 /// Team shape summary for one frame.
@@ -186,7 +190,9 @@ pub fn nearest_opponent_distance(player: Vec2, opponents: &[Vec2]) -> Option<f64
     opponents
         .iter()
         .map(|o| o.dist(player))
-        .fold(None, |acc: Option<f64>, d| Some(acc.map_or(d, |a| a.min(d))))
+        .fold(None, |acc: Option<f64>, d| {
+            Some(acc.map_or(d, |a| a.min(d)))
+        })
 }
 
 #[cfg(test)]
@@ -216,7 +222,10 @@ mod tests {
 
     #[test]
     fn offside_margin_sign_convention() {
-        assert!(offside_margin(44.0, 42.0) > 0.0, "beyond the line is positive");
+        assert!(
+            offside_margin(44.0, 42.0) > 0.0,
+            "beyond the line is positive"
+        );
         assert!(offside_margin(39.0, 42.0) < 0.0, "onside is negative");
     }
 
@@ -242,7 +251,10 @@ mod tests {
         let receiver = Vec2::new(30.0, 0.0);
         // Directly on the infinite line, but behind the ball.
         let v = passing_lane(ball, receiver, &[Vec2::new(0.0, 0.0)], 1.2);
-        assert!(v.open, "only defenders between passer and receiver block the lane");
+        assert!(
+            v.open,
+            "only defenders between passer and receiver block the lane"
+        );
     }
 
     #[test]
@@ -289,9 +301,21 @@ mod tests {
         ];
         let lines = defensive_lines(&xs, 3, 50);
         assert_eq!(lines.len(), 3);
-        assert!((lines[0] - 30.125).abs() < 1.0, "back line near 30, got {}", lines[0]);
-        assert!((lines[1] - 50.125).abs() < 1.0, "midfield near 50, got {}", lines[1]);
-        assert!((lines[2] - 70.5).abs() < 1.0, "forwards near 70, got {}", lines[2]);
+        assert!(
+            (lines[0] - 30.125).abs() < 1.0,
+            "back line near 30, got {}",
+            lines[0]
+        );
+        assert!(
+            (lines[1] - 50.125).abs() < 1.0,
+            "midfield near 50, got {}",
+            lines[1]
+        );
+        assert!(
+            (lines[2] - 70.5).abs() < 1.0,
+            "forwards near 70, got {}",
+            lines[2]
+        );
         // Sorted ascending.
         assert!(lines.windows(2).all(|w| w[0] <= w[1]));
     }
@@ -322,7 +346,11 @@ mod tests {
         let loose = marking_pressure(p, &[Vec2::new(65.0, 34.0)], 5.0);
         assert!(tight > 0.8, "a defender half a metre away is tight marking");
         assert!(loose < 0.1);
-        assert_eq!(marking_pressure(p, &[], 5.0), 0.0, "nobody near = no pressure");
+        assert_eq!(
+            marking_pressure(p, &[], 5.0),
+            0.0,
+            "nobody near = no pressure"
+        );
     }
 
     #[test]

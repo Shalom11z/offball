@@ -18,17 +18,17 @@ Two coordinate spaces are in play and are never mixed silently:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Iterable, Iterator, Sequence
 
 __all__ = [
-    "Team",
     "BBox",
     "Detection",
-    "PlayerObservation",
     "FrameState",
+    "PlayerObservation",
     "Point",
+    "Team",
 ]
 
 Point = tuple[float, float]
@@ -51,7 +51,7 @@ class Team(str, Enum):
     def is_player(self) -> bool:
         return self in (Team.HOME, Team.AWAY)
 
-    def opponent(self) -> "Team":
+    def opponent(self) -> Team:
         if self is Team.HOME:
             return Team.AWAY
         if self is Team.AWAY:
@@ -98,7 +98,7 @@ class BBox:
         """
         return ((self.x1 + self.x2) / 2.0, self.y2)
 
-    def iou(self, other: "BBox") -> float:
+    def iou(self, other: BBox) -> float:
         ix1, iy1 = max(self.x1, other.x1), max(self.y1, other.y1)
         ix2, iy2 = min(self.x2, other.x2), min(self.y2, other.y2)
         iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
@@ -106,7 +106,7 @@ class BBox:
         union = self.area + other.area - inter
         return inter / union if union > 0 else 0.0
 
-    def scaled(self, fx: float, fy: float) -> "BBox":
+    def scaled(self, fx: float, fy: float) -> BBox:
         """Scale about the centre, used to crop the torso for team assignment."""
         cx, cy = self.centre
         hw, hh = self.width * fx / 2.0, self.height * fy / 2.0
@@ -149,7 +149,7 @@ class PlayerObservation:
         vx, vy = self.velocity
         return math.hypot(vx, vy)
 
-    def with_pitch(self, xy: Point, velocity: Point | None = None) -> "PlayerObservation":
+    def with_pitch(self, xy: Point, velocity: Point | None = None) -> PlayerObservation:
         return replace(self, pitch_xy=xy, velocity=velocity)
 
 

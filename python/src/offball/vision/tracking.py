@@ -18,8 +18,8 @@ downstream metrics treat a fresh track ID as a new player.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from ..types import BBox, Detection, PlayerObservation, Team
 

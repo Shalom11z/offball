@@ -20,16 +20,16 @@ Design rules that the rest of the codebase relies on:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 from .. import kernels
 from ..kernels import ControlParams
 from ..types import FrameState, PlayerObservation, Point, Team
 
 __all__ = [
-    "OffBallScore",
     "FrameScore",
+    "OffBallScore",
     "ScoringConfig",
     "score_frame",
 ]
@@ -43,7 +43,7 @@ class ScoringConfig:
     #: 2m cells is ~4x faster and moves reported areas by under 2%.
     grid_nx: int = 105
     grid_ny: int = 68
-    control: ControlParams = ControlParams()
+    control: ControlParams = field(default_factory=ControlParams)
     #: Interceptable reach either side of a passing lane, in metres.
     lane_corridor: float = 1.2
     #: Distance at which marking pressure decays to 1/e.
@@ -206,11 +206,13 @@ def score_frame(
     line_x = kernels.offside_line([p[0] for p in def_pos], ball[0])
 
     # --- per-player --------------------------------------------------------
-    carrier = _ball_carrier(ball, [(a.track_id, p) for a, p in zip(attackers, att_pos)])
+    carrier = _ball_carrier(
+        ball, [(a.track_id, p) for a, p in zip(attackers, att_pos, strict=True)]
+    )
     carrier_id = carrier[0] if carrier else None
 
     scores: list[OffBallScore] = []
-    for i, (player, p) in enumerate(zip(attackers, att_pos)):
+    for i, (player, p) in enumerate(zip(attackers, att_pos, strict=True)):
         # The carrier is on the ball by definition; they are not an off-ball
         # actor and including them skews every team aggregate.
         if player.track_id == carrier_id:

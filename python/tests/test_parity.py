@@ -12,7 +12,6 @@ happened to be installed.
 
 from __future__ import annotations
 
-import importlib
 import math
 
 import pytest

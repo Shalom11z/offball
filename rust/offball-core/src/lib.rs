@@ -46,7 +46,11 @@ mod py {
         }
         homography::fit_ransac(&to_vecs(&src), &to_vecs(&dst), threshold, iterations, seed)
             .map(|(h, inliers)| (h.0.to_vec(), inliers))
-            .ok_or_else(|| PyValueError::new_err("homography fit failed: need >=4 non-collinear correspondences"))
+            .ok_or_else(|| {
+                PyValueError::new_err(
+                    "homography fit failed: need >=4 non-collinear correspondences",
+                )
+            })
     }
 
     /// Project points through a flat 9-element homography.
@@ -108,7 +112,11 @@ mod py {
         }
         let players = build_players(&positions, &velocities, &is_attacking)?;
         let p = Pitch::new(pitch_length, pitch_width);
-        let params = ControlParams { reaction_time, max_speed, tau };
+        let params = ControlParams {
+            reaction_time,
+            max_speed,
+            tau,
+        };
         let g = control::pitch_control(&players, &p, nx, ny, &params);
         Ok((g.values, g.nx, g.ny, g.cell_area))
     }
@@ -135,8 +143,14 @@ mod py {
         }
         let players = build_players(&positions, &velocities, &is_attacking)?;
         let p = Pitch::new(pitch_length, pitch_width);
-        let params = ControlParams { reaction_time, max_speed, tau };
-        Ok(control::player_space_ownership(&players, &p, nx, ny, &params))
+        let params = ControlParams {
+            reaction_time,
+            max_speed,
+            tau,
+        };
+        Ok(control::player_space_ownership(
+            &players, &p, nx, ny, &params,
+        ))
     }
 
     /// Threat-weighted controlled area, in value-weighted m^2.
@@ -153,8 +167,16 @@ mod py {
         if values.len() != nx * ny {
             return Err(PyValueError::new_err("values length must equal nx * ny"));
         }
-        let g = Grid { nx, ny, cell_area, values };
-        Ok(control::dangerous_space(&g, &Pitch::new(pitch_length, pitch_width)))
+        let g = Grid {
+            nx,
+            ny,
+            cell_area,
+            values,
+        };
+        Ok(control::dangerous_space(
+            &g,
+            &Pitch::new(pitch_length, pitch_width),
+        ))
     }
 
     #[pyfunction]
@@ -201,7 +223,10 @@ mod py {
 
     #[pymodule]
     fn offball_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
-        m.add("__doc__", "Rust kernels for the offball soccer analytics platform.")?;
+        m.add(
+            "__doc__",
+            "Rust kernels for the offball soccer analytics platform.",
+        )?;
         m.add_function(wrap_pyfunction!(fit_homography, m)?)?;
         m.add_function(wrap_pyfunction!(project, m)?)?;
         m.add_function(wrap_pyfunction!(pitch_control, m)?)?;

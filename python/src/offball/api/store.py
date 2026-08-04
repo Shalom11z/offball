@@ -13,17 +13,17 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from .schemas import JobStatus
 
-__all__ = ["Job", "JobStore", "InMemoryJobStore"]
+__all__ = ["InMemoryJobStore", "Job", "JobStore"]
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass(frozen=True, slots=True)

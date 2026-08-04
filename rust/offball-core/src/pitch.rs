@@ -20,7 +20,10 @@ pub struct Pitch {
 impl Default for Pitch {
     /// The UEFA-standard 105x68 pitch.
     fn default() -> Self {
-        Self { length: 105.0, width: 68.0 }
+        Self {
+            length: 105.0,
+            width: 68.0,
+        }
     }
 }
 
@@ -119,7 +122,11 @@ mod tests {
 
     #[test]
     fn template_keypoints_are_all_on_the_pitch() {
-        for pitch in [Pitch::default(), Pitch::new(100.0, 64.0), Pitch::new(115.0, 75.0)] {
+        for pitch in [
+            Pitch::default(),
+            Pitch::new(100.0, 64.0),
+            Pitch::new(115.0, 75.0),
+        ] {
             for (name, p) in pitch.template_keypoints() {
                 assert!(pitch.contains(p), "{name} at {p:?} is off {pitch:?}");
             }

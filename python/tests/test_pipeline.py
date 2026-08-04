@@ -7,8 +7,6 @@ whole point of the injected-dependency design in :class:`offball.pipeline.Pipeli
 
 from __future__ import annotations
 
-import pytest
-
 from offball import kernels
 from offball.pipeline import Pipeline, PipelineConfig, PossessionTracker
 from offball.tactics.offball import ScoringConfig
@@ -65,7 +63,7 @@ class FixedTeamAssigner:
     def __init__(self, attacker_ids: set[int]) -> None:
         self.attacker_ids = attacker_ids
 
-    def assign(self, frame, observations):  # noqa: ANN001
+    def assign(self, frame, observations):
         return [
             PlayerObservation(
                 track_id=o.track_id,

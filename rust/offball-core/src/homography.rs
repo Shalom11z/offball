@@ -89,7 +89,10 @@ fn normalise(pts: &[Vec2]) -> (Vec<Vec2>, Homography) {
         1.0
     };
     let t = Homography([s, 0.0, -s * cx, 0.0, s, -s * cy, 0.0, 0.0, 1.0]);
-    let out = pts.iter().map(|p| Vec2::new(s * (p.x - cx), s * (p.y - cy))).collect();
+    let out = pts
+        .iter()
+        .map(|p| Vec2::new(s * (p.x - cx), s * (p.y - cy)))
+        .collect();
     (out, t)
 }
 
@@ -334,7 +337,11 @@ mod tests {
 
         let (fitted, inliers) =
             fit_ransac(&src, &dst, 1.0, 500, 42).expect("ransac should find consensus");
-        assert_eq!(inliers.len(), 8, "the 8 clean correspondences are the consensus set");
+        assert_eq!(
+            inliers.len(),
+            8,
+            "the 8 clean correspondences are the consensus set"
+        );
         assert!(!inliers.contains(&8));
         assert!(!inliers.contains(&9));
         assert!(fitted.reprojection_error(&src[..8], &dst[..8]) < 1e-6);
@@ -359,7 +366,11 @@ mod tests {
 
     #[test]
     fn too_few_points_is_none() {
-        let src = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)];
+        let src = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, 1.0),
+        ];
         let dst = src.clone();
         assert!(fit_dlt(&src, &dst).is_none());
     }

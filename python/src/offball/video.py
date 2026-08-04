@@ -7,11 +7,11 @@ decoded, so nothing here ever materialises a list of frames.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
-__all__ = ["VideoMeta", "read_frames", "probe"]
+__all__ = ["VideoMeta", "probe", "read_frames"]
 
 
 @dataclass(frozen=True, slots=True)

@@ -24,14 +24,13 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict, deque
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator, Sequence
 
 from .tactics.offball import FrameScore, ScoringConfig, score_frame
 from .tactics.report import MatchReport, build_report
 from .types import Detection, FrameState, PlayerObservation, Point, Team
 from .vision.calibration import (
-    Calibration,
     CalibrationConfig,
     HomographySmoother,
     calibrate_frame,
@@ -46,9 +45,9 @@ class PipelineConfig:
     fps: float = 25.0
     pitch_length: float = 105.0
     pitch_width: float = 68.0
-    tracker: TrackerConfig = TrackerConfig()
-    calibration: CalibrationConfig = CalibrationConfig()
-    scoring: ScoringConfig = ScoringConfig()
+    tracker: TrackerConfig = field(default_factory=TrackerConfig)
+    calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
+    scoring: ScoringConfig = field(default_factory=ScoringConfig)
     #: Frames of position history used for the velocity estimate. Five frames
     #: at 25fps is 0.2s: long enough to suppress tracking jitter, short enough
     #: to still register a sharp change of direction.
@@ -172,9 +171,9 @@ class Pipeline:
 
     def __init__(
         self,
-        detector,  # noqa: ANN001 - Detector protocol, kept loose for optional deps
-        keypoints,  # noqa: ANN001 - KeypointSource protocol
-        team_assigner=None,  # noqa: ANN001
+        detector,
+        keypoints,
+        team_assigner=None,
         config: PipelineConfig | None = None,
     ) -> None:
         self.config = config or PipelineConfig()
@@ -194,7 +193,7 @@ class Pipeline:
         self.possession.reset()
         self._velocity.reset()
 
-    def process_frame(self, frame, frame_index: int) -> FrameState:  # noqa: ANN001
+    def process_frame(self, frame, frame_index: int) -> FrameState:
         """Run one frame through detection, tracking, calibration and projection."""
         cfg = self.config
         timestamp = frame_index / cfg.fps if cfg.fps > 0 else 0.0
@@ -215,7 +214,7 @@ class Pipeline:
             projected = calibration.to_pitch(image_points)
 
             placed: list[PlayerObservation] = []
-            for obs, xy in zip(observations, projected):
+            for obs, xy in zip(observations, projected, strict=True):
                 if xy is None:
                     # Projected onto the horizon: no finite pitch location.
                     placed.append(obs)

@@ -15,29 +15,30 @@ Rust one is wrong. ``tests/test_parity.py`` enforces this.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 from .types import Point
 
 __all__ = [
     "BACKEND",
-    "using_rust",
-    "ControlParams",
     "ControlGrid",
+    "ControlParams",
     "LaneVerdict",
     "TeamShape",
-    "fit_homography",
-    "project",
-    "pitch_control",
-    "space_ownership",
     "dangerous_space",
-    "pitch_value",
+    "defensive_lines",
+    "fit_homography",
+    "marking_pressure",
     "offside_line",
     "passing_lane",
+    "pitch_control",
+    "pitch_value",
+    "project",
+    "space_ownership",
     "team_shape",
-    "defensive_lines",
-    "marking_pressure",
+    "using_rust",
 ]
 
 try:  # pragma: no cover - exercised by whichever branch the environment takes
@@ -232,7 +233,7 @@ def _fit_dlt(src: Sequence[Point], dst: Sequence[Point]) -> tuple[float, ...] | 
 
     ata = [[0.0] * 8 for _ in range(8)]
     atb = [0.0] * 8
-    for (x, y), (u, v) in zip(ns, nd):
+    for (x, y), (u, v) in zip(ns, nd, strict=True):
         for row, rhs in (
             ([x, y, 1.0, 0.0, 0.0, 0.0, -u * x, -u * y], u),
             ([0.0, 0.0, 0.0, x, y, 1.0, -v * x, -v * y], v),
@@ -247,7 +248,7 @@ def _fit_dlt(src: Sequence[Point], dst: Sequence[Point]) -> tuple[float, ...] | 
     h = _solve_linear(ata, atb)
     if h is None:
         return None
-    hn = tuple(h) + (1.0,)
+    hn = (*h, 1.0)
     td_inv = _mat_inv3(td)
     if td_inv is None:
         return None
@@ -350,7 +351,8 @@ def project(h: Sequence[float], pts: Sequence[Point]) -> list[Point | None]:
     if len(h) != 9:
         raise ValueError("homography must have 9 elements")
     if _rs is not None:
-        return [None if p is None else (p[0], p[1]) for p in _rs.project(list(h), [tuple(p) for p in pts])]
+        projected = _rs.project(list(h), [tuple(p) for p in pts])
+        return [None if p is None else (p[0], p[1]) for p in projected]
     return [_apply(h, p) for p in pts]
 
 
@@ -397,7 +399,7 @@ def pitch_control(
             q = _cell_centre(ix, iy, nx, ny, pitch_length, pitch_width)
             t_att = math.inf
             t_def = math.inf
-            for pos, vel, att in zip(positions, velocities, is_attacking):
+            for pos, vel, att in zip(positions, velocities, is_attacking, strict=True):
                 t = params.time_to_intercept(pos, vel, q)
                 if att:
                     t_att = min(t_att, t)
@@ -458,7 +460,7 @@ def space_ownership(
         for ix in range(nx):
             q = _cell_centre(ix, iy, nx, ny, pitch_length, pitch_width)
             best_i, best_t = 0, math.inf
-            for i, (pos, vel) in enumerate(zip(positions, velocities)):
+            for i, (pos, vel) in enumerate(zip(positions, velocities, strict=True)):
                 t = params.time_to_intercept(pos, vel, q)
                 if t < best_t:
                     best_t, best_i = t, i

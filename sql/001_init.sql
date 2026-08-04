@@ -90,7 +90,14 @@ CREATE TABLE IF NOT EXISTS match_period (
 
 -- ------------------------------------------------------------------- jobs
 
-CREATE TYPE job_status AS ENUM ('queued', 'running', 'succeeded', 'failed');
+-- CREATE TYPE has no IF NOT EXISTS, so guard it explicitly: these migrations
+-- are re-applied in CI to prove they are safe to run against a live database.
+DO $$
+BEGIN
+    CREATE TYPE job_status AS ENUM ('queued', 'running', 'succeeded', 'failed');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS analysis_job (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),

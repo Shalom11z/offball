@@ -13,7 +13,6 @@ import pytest
 from offball import kernels
 from offball.kernels import ControlParams
 
-
 # ---------------------------------------------------------------- homography
 
 
@@ -47,8 +46,8 @@ def test_fit_homography_rejects_outliers():
     ]
     dst = [_apply(h, p) for p in src]
     # A keypoint model confusing the two penalty boxes.
-    src = src + [(20.0, 20.0), (70.0, 50.0)]
-    dst = dst + [(900.0, -400.0), (-250.0, 700.0)]
+    src = [*src, (20.0, 20.0), (70.0, 50.0)]
+    dst = [*dst, (900.0, -400.0), (-250.0, 700.0)]
 
     _, inliers = kernels.fit_homography(src, dst, threshold=1.0, iterations=500, seed=42)
     assert set(inliers) == set(range(8))
@@ -233,5 +232,6 @@ def test_marking_pressure_decays_with_distance():
 
 
 def test_nearest_opponent_distance():
-    assert kernels.nearest_opponent_distance((0.0, 0.0), [(10.0, 0.0), (3.0, 4.0)]) == pytest.approx(5.0)
+    d = kernels.nearest_opponent_distance((0.0, 0.0), [(10.0, 0.0), (3.0, 4.0)])
+    assert d == pytest.approx(5.0)
     assert kernels.nearest_opponent_distance((0.0, 0.0), []) is None

@@ -82,7 +82,7 @@ def run_analysis(job_id: str, request: AnalysisRequest, store: JobStore) -> None
             "No detector is configured. Set OFFBALL_DETECTOR_WEIGHTS and install "
             "the 'vision' extra to enable video analysis."
         )
-    except Exception as exc:  # noqa: BLE001 - the job records any failure
+    except Exception as exc:
         logger.exception("analysis job %s failed", job_id)
         store.update(job_id, status=JobStatus.FAILED, error=str(exc))
 

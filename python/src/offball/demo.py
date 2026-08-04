@@ -13,12 +13,11 @@ nothing about real-world accuracy.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
-from .types import BBox, Detection, FrameState, PlayerObservation, Point, Team
+from .types import BBox, FrameState, PlayerObservation, Point, Team
 
-__all__ = ["synthetic_frames", "SyntheticMatch"]
+__all__ = ["SyntheticMatch", "synthetic_frames"]
 
 
 def _bbox_at(x: float, y: float) -> BBox:

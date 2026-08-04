@@ -20,12 +20,13 @@ the ball badly, and the ball is the part worth your annotation budget.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from ..types import BBox, Detection
 
-__all__ = ["Detector", "YoloDetector", "ScriptedDetector", "DetectorConfig"]
+__all__ = ["Detector", "DetectorConfig", "ScriptedDetector", "YoloDetector"]
 
 
 @runtime_checkable
@@ -36,7 +37,7 @@ class Detector(Protocol):
     because this module must import without numpy or OpenCV present.
     """
 
-    def detect(self, frame) -> list[Detection]:  # noqa: ANN001 - see docstring
+    def detect(self, frame) -> list[Detection]:
         ...
 
 
@@ -88,7 +89,7 @@ class YoloDetector:
         self.class_map = class_map or {"person": "player", "sports ball": "ball"}
         self._model = YOLO(weights)
 
-    def detect(self, frame) -> list[Detection]:  # noqa: ANN001
+    def detect(self, frame) -> list[Detection]:
         results = self._model.predict(
             frame,
             conf=self.config.confidence,
@@ -128,7 +129,7 @@ class ScriptedDetector:
     def reset(self) -> None:
         self._index = 0
 
-    def detect(self, frame=None) -> list[Detection]:  # noqa: ANN001
+    def detect(self, frame=None) -> list[Detection]:
         if self._index >= len(self._script):
             return []
         out = self._script[self._index]
