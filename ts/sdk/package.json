@@ -1,0 +1,35 @@
+{
+  "name": "@offball/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript client for the offball soccer off-the-ball analytics API",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "codegen": "echo 'Regenerate src/types.ts from the API OpenAPI schema; see docs/05-api.md'"
+  },
+  "keywords": ["soccer", "football", "analytics", "sports", "computer-vision"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shalom11z/offball.git",
+    "directory": "ts/sdk"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0"
+  }
+}
