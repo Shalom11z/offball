@@ -181,19 +181,22 @@ def _print_report(report) -> None:
 
 def _cmd_benchmark(args: argparse.Namespace) -> int:
     """Measure how well calibration performs on real footage."""
-    from .benchmark import evaluate_frames
+    from .benchmark import evaluate_frames, survey_soccernet
 
     path = Path(args.source)
     if not path.exists():
         print(f"error: no such file or directory: {path}", file=sys.stderr)
         return 2
 
-    survey = evaluate_frames(
-        path,
-        ground_truth=args.ground_truth,
-        limit=args.limit,
-        stride=args.stride,
-    )
+    if args.soccernet:
+        survey = survey_soccernet(path, limit=args.limit)
+    else:
+        survey = evaluate_frames(
+            path,
+            ground_truth=args.ground_truth,
+            limit=args.limit,
+            stride=args.stride,
+        )
 
     if args.json:
         json.dump(survey.to_dict(), sys.stdout, indent=2)
@@ -206,7 +209,7 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
     if survey.rate < 0.6:
         print("Calibration rate below 60%: this camera angle or footage quality")
         print("is not usable as-is. Inspect a failing frame before tuning.")
-    if not args.ground_truth:
+    if not args.ground_truth and not args.soccernet:
         print("No ground truth supplied, so this measures whether calibration")
         print("*succeeds*, not whether it is *correct*. Pass --ground-truth to")
         print("get real error figures.")
@@ -263,6 +266,9 @@ def build_parser() -> argparse.ArgumentParser:
                          help="sample every Nth frame (default: ~1 per second)")
     p_bench.add_argument("--limit", type=int, default=200,
                          help="stop after this many sampled frames")
+    p_bench.add_argument("--soccernet", action="store_true",
+                         help="treat SOURCE as a SoccerNet-Calibration split; "
+                              "ground truth comes from its line annotations")
     p_bench.add_argument("--json", action="store_true")
     p_bench.set_defaults(func=_cmd_benchmark)
 

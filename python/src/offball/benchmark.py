@@ -44,6 +44,7 @@ __all__ = [
     "evaluate_frames",
     "load_ground_truth",
     "survey_frames",
+    "survey_soccernet",
 ]
 
 #: Points spread over the pitch at which reprojection error is measured.
@@ -274,6 +275,43 @@ def load_ground_truth(path: str | Path) -> list[tuple[float, ...] | None]:
         else:
             raise ValueError(f"homography must have 9 elements, got {len(entry)}")
     return out
+
+
+def survey_soccernet(
+    directory: str | Path,
+    limit: int | None = None,
+    config: PitchLineConfig | None = None,
+    pitch_length: float = 105.0,
+    pitch_width: float = 68.0,
+) -> CalibrationSurvey:
+    """Benchmark against a SoccerNet-Calibration split, with ground truth.
+
+    This is the real measurement: SoccerNet frames are broadcast footage, and
+    its line annotations give a ground-truth homography per frame, so error is
+    reported in metres rather than as a success rate.
+
+    Frames SoccerNet does not annotate well enough to derive a homography from
+    (a goalmouth close-up, say) are still counted, with no truth error — they
+    contribute to the calibration rate but not to the accuracy figures.
+    """
+    import cv2
+
+    from .datasets.soccernet import iter_annotated_frames
+
+    frames = []
+    truth: list[tuple[float, ...] | None] = []
+    for i, (image_path, homography) in enumerate(
+        iter_annotated_frames(directory, pitch_length, pitch_width)
+    ):
+        if limit is not None and i >= limit:
+            break
+        image = cv2.imread(str(image_path))
+        if image is None:
+            continue
+        frames.append(image)
+        truth.append(homography)
+
+    return survey_frames(frames, config=config, ground_truth=truth)
 
 
 def evaluate_frames(
