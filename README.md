@@ -53,6 +53,12 @@ Check which backend is active:
 offball info
 ```
 
+Measure how well calibration copes with a piece of real footage:
+
+```bash
+offball benchmark match.mp4
+```
+
 ## What it measures
 
 All metrics are computed in pitch metres after the frame homography, with the

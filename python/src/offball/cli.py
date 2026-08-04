@@ -5,6 +5,7 @@
     offball demo                      # run the synthetic sequence, print a report
     offball demo --json               # machine-readable
     offball analyse match.mp4         # analyse real footage (needs the vision extra)
+    offball benchmark match.mp4       # how often does calibration succeed?
     offball serve                     # start the HTTP API
     offball info                      # environment and backend check
 """
@@ -178,6 +179,40 @@ def _print_report(report) -> None:
         )
 
 
+def _cmd_benchmark(args: argparse.Namespace) -> int:
+    """Measure how well calibration performs on real footage."""
+    from .benchmark import evaluate_frames
+
+    path = Path(args.source)
+    if not path.exists():
+        print(f"error: no such file or directory: {path}", file=sys.stderr)
+        return 2
+
+    survey = evaluate_frames(
+        path,
+        ground_truth=args.ground_truth,
+        limit=args.limit,
+        stride=args.stride,
+    )
+
+    if args.json:
+        json.dump(survey.to_dict(), sys.stdout, indent=2)
+        print()
+        return 0
+
+    print(f"calibration survey: {path.name}\n")
+    print(survey.summary())
+    print()
+    if survey.rate < 0.6:
+        print("Calibration rate below 60%: this camera angle or footage quality")
+        print("is not usable as-is. Inspect a failing frame before tuning.")
+    if not args.ground_truth:
+        print("No ground truth supplied, so this measures whether calibration")
+        print("*succeeds*, not whether it is *correct*. Pass --ground-truth to")
+        print("get real error figures.")
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -217,6 +252,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_analyse.add_argument("--pitch-width", type=float, default=68.0)
     p_analyse.add_argument("--json", action="store_true")
     p_analyse.set_defaults(func=_cmd_analyse)
+
+    p_bench = sub.add_parser(
+        "benchmark", help="measure calibration quality on real footage"
+    )
+    p_bench.add_argument("source", help="video file or directory of frames")
+    p_bench.add_argument("--ground-truth", default=None,
+                         help="JSON list of per-frame image->pitch homographies")
+    p_bench.add_argument("--stride", type=int, default=25,
+                         help="sample every Nth frame (default: ~1 per second)")
+    p_bench.add_argument("--limit", type=int, default=200,
+                         help="stop after this many sampled frames")
+    p_bench.add_argument("--json", action="store_true")
+    p_bench.set_defaults(func=_cmd_benchmark)
 
     p_serve = sub.add_parser("serve", help="run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")

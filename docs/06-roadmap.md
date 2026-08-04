@@ -62,10 +62,35 @@ which in turn sets the direction every off-ball metric is computed in.
 Also worth a distinct class for officials, which would remove the referee from
 the kit-colour clustering problem entirely.
 
-### 1.3 Validate on real footage
+### 1.3 Validate on real footage — *harness ready, data needed*
 
-Everything above is tested against scripted inputs, which validates the *code*
-and says nothing about *accuracy*. Needed:
+Everything above is tested against scripted or rendered inputs, which validates
+the *code* and says nothing about *accuracy*.
+
+`offball benchmark <video|dir>` now measures the calibration half of this:
+calibration rate, line support, fit error, and — given ground-truth
+homographies — real error in metres at probes spread across the pitch,
+reported as median/p90/worst rather than a mean, because the tail is what makes
+a calibrator unusable.
+
+**SoccerNet** is the right source. Its calibration and game-state splits are
+real broadcast footage with annotated pitch geometry, so they give both video
+and ground truth. The data is behind a short NDA form at
+<https://www.soccer-net.org/data>; once you have the password:
+
+```bash
+pip install SoccerNet
+python -c "
+from SoccerNet.Downloader import SoccerNetDownloader as D
+d = D(LocalDirectory='data/soccernet')
+d.downloadDataTask(task='calibration-2023', split=['test'], password='YOUR_PASSWORD')
+"
+```
+
+Then write a small adapter turning its line annotations into the nine-number
+homography list `benchmark.load_ground_truth` expects, and the numbers follow.
+
+Still needed beyond calibration:
 
 - Tracking: ID switches per match against hand-labelled ground truth.
 - Calibration: reprojection error distribution; how often the symmetry gate
