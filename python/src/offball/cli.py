@@ -323,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_analyse = sub.add_parser("analyse", help="analyse a match video")
     p_analyse.add_argument("video", help="path to the footage")
-    p_analyse.add_argument("--weights", default="yolov8x.pt",
+    p_analyse.add_argument("--weights", default="yolo11m.pt",
                            help="detector checkpoint (downloaded on first use)")
     p_analyse.add_argument("--stride", type=int, default=5,
                            help="analyse every Nth frame; raises throughput, "

@@ -100,7 +100,7 @@ class YoloDetector:
 
     def __init__(
         self,
-        weights: str = "yolov8x.pt",
+        weights: str = "yolo11m.pt",
         config: DetectorConfig | None = None,
         class_map: dict[str, str] | None = None,
     ) -> None:
