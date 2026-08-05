@@ -364,6 +364,34 @@ that cannot yet be identified reliably** — the strongest steep line in a frame
 is frequently a penalty-area edge. That is the thing to fix, and until it is
 fixed no amount of solver work will help.
 
+### Halfway-line identification: improved, still not sufficient
+
+The line is now accepted only when it bisects a detected centre circle, which is
+the property that actually defines it. The frame abstains when no circle
+corroborates a candidate, because with nothing to check against there is no way
+to tell the halfway line from a penalty-area edge.
+
+Two approaches were tried and one was reverted:
+
+* **Joint identification** — requiring a valid (ellipse, line) pair before
+  accepting either. Correct in principle and it detected *nothing*: the line
+  erasure that precedes ellipse fitting fragments the circle into arcs, so the
+  surviving contour's centre rarely sits within the threshold of the true line.
+  Reverted.
+* **Independent circle, then bisection check** — kept. Accept rate 39%,
+  median error still ~49m.
+
+The remaining barrier is the contour-based circle finder. Straight lines must be
+erased before fitting an ellipse (or the circle merges with the halfway line
+into one unfittable blob), but that same erasure splits the circle into arcs
+whose closed contours are thin slivers and fail the eccentricity test.
+Morphological closing to rejoin them merges the whole pitch outline instead.
+
+**A conic fit over the line-mask pixels with RANSAC, rather than contour
+tracing, is the way out** — it needs no erasure and tolerates the halfway line
+crossing the circle. That is the next concrete step and the last known blocker
+on this calibrator.
+
 ### Still unresolved
 
 After both fixes the accept rate falls from 83% to 37% — fewer confidently wrong

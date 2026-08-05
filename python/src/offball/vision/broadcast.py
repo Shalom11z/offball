@@ -204,24 +204,18 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
     else:
         touchline = []
 
-    # --- halfway line: the strongest steep line --------------------------
-    halfway: list[Point] = []
-    halfway_line = None
-    candidates = [
-        line
-        for line in lines
-        if min(abs(math.degrees(line.theta)), 180 - abs(math.degrees(line.theta)))
-        < config.halfway_max_angle_deg
-    ]
-    if candidates:
-        best = max(candidates, key=lambda line: line.strength)
-        halfway_line = best
-        cos_t, sin_t = math.cos(best.theta), math.sin(best.theta)
-        for t in np.linspace(-height, height, 60):
-            x = cos_t * best.rho - sin_t * t
-            y = sin_t * best.rho + cos_t * t
-            if 0 <= x < width and 0 <= y < height and mask[int(y), int(x)] > 0:
-                halfway.append((float(x), float(y)))
+    # --- halfway-line candidates -----------------------------------------
+    # Deliberately not chosen yet. The strongest steep line is frequently a
+    # penalty-area edge, and calling that x = length/2 feeds the solver a ~36m
+    # error. The halfway line is identified jointly with the centre circle
+    # below, by the one property that distinguishes it: it passes through the
+    # circle's centre.
+    # Every detected line is a candidate. The angle filter that used to sit
+    # here was only ever a proxy for "looks like the halfway line", and it
+    # excluded the true line in wide views while admitting penalty-area edges.
+    # Passing through the circle's centre is the actual defining property, so
+    # let that do the discriminating.
+    steep = list(lines)
 
     # --- centre circle ----------------------------------------------------
     # Erase every straight line first: the circle touches the halfway line, and
@@ -238,10 +232,20 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
             9,
         )
 
-    contours, _ = cv2.findContours(
-        without_lines, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE
-    )
+    contours, _ = cv2.findContours(without_lines, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+
+    # Score every (ellipse, steep line) pair by how close the line passes to the
+    # ellipse centre. The centre circle is bisected by the halfway line; a
+    # penalty arc is not bisected by anything, and the penalty-area edge that
+    # sits near it misses its centre by several metres. Choosing the pair, not
+    # each part separately, is what makes the identification reliable.
+    # Pick the best ellipse on its own merits, then accept a halfway line only
+    # if one genuinely bisects it. Identifying the two jointly (requiring a pair
+    # before accepting either) was tried and detected nothing at all: the line
+    # erasure above fragments the arc, so the surviving contour's centre rarely
+    # sits within a line's width of the true halfway line.
     circle: list[Point] = []
+    circle_centre: Point | None = None
     for contour in contours:
         if len(contour) < 60:
             continue
@@ -251,8 +255,7 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
             continue
         # cv2.fitEllipse returns (width, height) of the rotated box, in that
         # order and *not* sorted. Treating the first as the major axis rejects
-        # legitimate circles whose box happens to be taller than it is wide —
-        # measured on real frames returning axes like (90, 489).
+        # legitimate circles whose box is taller than it is wide.
         (ex, ey), axes, _ = ellipse
         major, minor = max(axes), min(axes)
         if major < config.min_ellipse_major or minor < config.min_ellipse_minor:
@@ -262,7 +265,7 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
         if not (0 < ex < width and 0 < ey < height):
             continue
 
-        points = [(float(p[0][0]), float(p[0][1])) for p in contour]
+        points = [(float(pt[0][0]), float(pt[0][1])) for pt in contour]
         inliers = _ellipse_inliers(points, ellipse, config.ellipse_inlier_px)
         if (
             len(inliers) < config.min_ellipse_inlier_ratio * len(points)
@@ -271,23 +274,29 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
             continue
         if len(inliers) > len(circle):
             circle = inliers
+            circle_centre = (ex, ey)
 
-    # A steep line is only the halfway line if it bisects the centre circle.
-    # Without this check the strongest steep line is often a penalty-area edge,
-    # and calling that x = length/2 feeds the solver a ~36m lie. Measured
-    # against ground truth, the "halfway" line was landing at x = 16.3 and 88.6
-    # (the penalty-area lines) instead of 52.5.
-    if halfway and circle:
-        cx = sum(p[0] for p in circle) / len(circle)
-        cy = sum(p[1] for p in circle) / len(circle)
-        if halfway_line is not None:
-            cos_t, sin_t = math.cos(halfway_line.theta), math.sin(halfway_line.theta)
-            if abs(cx * cos_t + cy * sin_t - halfway_line.rho) > config.halfway_bisects_px:
-                halfway = []
-    elif halfway and not circle:
-        # No circle to corroborate it, so there is no way to tell the halfway
-        # line from a penalty-area edge. Abstain rather than guess.
-        halfway = []
+    # The halfway line bisects the centre circle; a penalty-area edge does not.
+    # Verified against ground truth: without this check the chosen line landed
+    # at x = 16.3 and x = 88.6 (the penalty-area lines) while the solver was
+    # told x = 52.5. With no circle to corroborate it there is no way to tell
+    # them apart, so abstain rather than feed the solver a 36m error.
+    halfway: list[Point] = []
+    if circle_centre is not None:
+        cx, cy = circle_centre
+        best_line = None
+        best_offset = config.halfway_bisects_px
+        for line in steep:
+            offset = abs(cx * math.cos(line.theta) + cy * math.sin(line.theta) - line.rho)
+            if offset < best_offset:
+                best_offset, best_line = offset, line
+        if best_line is not None:
+            cos_t, sin_t = math.cos(best_line.theta), math.sin(best_line.theta)
+            for t in np.linspace(-height, height, 60):
+                x = cos_t * best_line.rho - sin_t * t
+                y = sin_t * best_line.rho + cos_t * t
+                if 0 <= x < width and 0 <= y < height and mask[int(y), int(x)] > 0:
+                    halfway.append((float(x), float(y)))
 
     return PitchEvidence(circle=circle[::2], touchline=touchline, halfway=halfway)
 
