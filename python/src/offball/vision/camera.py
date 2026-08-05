@@ -28,6 +28,29 @@ crucially they are *physically* constrained — a camera cannot be underground o
 have negative focal length. Fitting the camera and deriving the homography from
 it is what makes the centre view tractable.
 
+## Evidence sufficiency: circle + touchline is NOT enough
+
+Measured against SoccerNet ground truth, and the central finding of this
+module's development:
+
+* Frames whose circle and touchline evidence were **verified correct against
+  ground truth** — detected circle radius 9.1m against a true 9.15m, touchline
+  landing on the real touchline — still produced camera fits **43-60m wrong**.
+* Multi-start optimisation *lowered the residual* while raising the median
+  error from 50m to 80m.
+
+Both point the same way. A circle contributes 5 independent constraints and a
+touchline 2, for exactly the camera's 7 degrees of freedom. Exactly determined
+means no redundancy, so noisy evidence admits many cameras that fit equally well
+and are geometrically wrong — and a lower residual genuinely does not mean a
+better camera.
+
+**The halfway line is not optional; it is what makes the system
+over-determined.** It is also the piece hardest to identify reliably, because
+the strongest steep line in a frame is frequently a penalty-area edge. Until
+that identification is solid, this calibrator should be treated as unreliable
+regardless of the residual it reports.
+
 ## Residuals are in metres
 
 Every residual is expressed by un-projecting detected image points onto the
@@ -291,6 +314,11 @@ def fit_camera(
     upper = [8.0 * image_width, pitch_length + 60.0, -3.0, 90.0, 1.2, 1.3, 0.6]
     start = [min(max(v, lo), hi) for v, lo, hi in zip(init.to_params(), lower, upper, strict=True)]
 
+    # Single start, deliberately. Multi-start was tried and made accuracy
+    # *worse* (median 50m -> 80m against ground truth) while lowering the
+    # residual, which is the diagnostic that matters: the cost function is
+    # under-constrained, so a better-fitting camera is not a more correct one.
+    # See the note on evidence sufficiency in this module's docstring.
     try:
         result = least_squares(
             residuals, start, bounds=(lower, upper), max_nfev=400, xtol=1e-8, ftol=1e-8

@@ -340,6 +340,30 @@ pitch-mask boundary corresponds to `y = 0` in some frames and `y = width` in
 others, depending which side the camera is on. Both hypotheses are now fitted
 and the better kept; this did not move the median.
 
+### Root cause: the evidence is insufficient, not just noisy
+
+Applying the oracle to the frames that still produced a fit settled it. Three of
+them — 00060, 00153, 00301 — had **evidence verified correct against ground
+truth**: detected circle radius 9.1-9.4m against a true 9.15m, touchline landing
+on a real touchline. Their fits were still 43-60m wrong.
+
+Correct inputs, wrong output. That moves the fault out of the evidence and into
+the solve.
+
+Multi-start optimisation confirmed it from the other direction: trying 28
+starting points *lowered the residual* and raised the median error from 50m to
+80m. A better-fitting camera was not a more correct one.
+
+The reason is degrees of freedom. A circle supplies 5 independent constraints
+and a touchline 2 — exactly the camera's 7. Exactly determined means **no
+redundancy**, so noisy evidence admits many cameras that fit equally well and
+are geometrically wrong, and the residual cannot tell them apart.
+
+**The halfway line is what makes the system over-determined, and it is the piece
+that cannot yet be identified reliably** — the strongest steep line in a frame
+is frequently a penalty-area edge. That is the thing to fix, and until it is
+fixed no amount of solver work will help.
+
 ### Still unresolved
 
 After both fixes the accept rate falls from 83% to 37% — fewer confidently wrong
