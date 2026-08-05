@@ -94,6 +94,7 @@ def _cmd_analyse(args: argparse.Namespace) -> int:
         from .pipeline import Pipeline, PipelineConfig
         from .tactics.offball import ScoringConfig
         from .video import probe, read_frames
+        from .vision.broadcast import BroadcastCalibrator
         from .vision.detection import DetectorConfig, YoloDetector
         from .vision.lines import ClassicalKeypointSource
         from .vision.teams import TeamAssigner
@@ -106,17 +107,42 @@ def _cmd_analyse(args: argparse.Namespace) -> int:
     print(f"{path.name}: {meta.width}x{meta.height}, {meta.fps:.2f} fps, "
           f"{meta.frame_count} frames ({meta.duration / 60:.1f} min)")
     print(f"analysing every {args.stride} frame(s) -> effective {fps:.1f} fps")
-    print(f"detector: {args.weights} | kernels: {BACKEND}")
+    print(f"detector: {args.weights} | calibrator: {args.calibrator} | kernels: {BACKEND}")
     if args.limit:
         print(f"limited to {args.limit} frames")
     print()
 
+    detector = YoloDetector(
+        args.weights, DetectorConfig(confidence=args.confidence, image_size=args.imgsz)
+    )
+
+    # Kit colours must be learned before the main pass, from frames sampled
+    # across the whole clip: lighting shifts over 90 minutes, and a profile
+    # fitted only on the opening minutes degrades badly later. Without this the
+    # assigner abstains on every player and nothing can be scored.
+    assigner = TeamAssigner()
+    if not args.no_teams:
+        print("fitting kit colours...", flush=True)
+        samples = []
+        for frame in read_frames(path, stride=max(1, meta.frame_count // 12), limit=12):
+            boxes = [d.bbox for d in detector.detect(frame) if not d.is_ball]
+            if boxes:
+                samples.append((frame, boxes))
+        profile = assigner.fit(samples)
+        if profile is None:
+            print("  could not learn kit colours; teams will be unassigned")
+        else:
+            print(f"  separation {profile.separation:.0f} "
+                  f"({'reliable' if profile.is_reliable else 'TOO SIMILAR - unreliable'})")
+
+    keypoints = (
+        ClassicalKeypointSource() if args.calibrator == "lines" else BroadcastCalibrator()
+    )
+
     pipeline = Pipeline(
-        detector=YoloDetector(
-            args.weights, DetectorConfig(confidence=args.confidence, image_size=args.imgsz)
-        ),
-        keypoints=ClassicalKeypointSource(),
-        team_assigner=TeamAssigner(),
+        detector=detector,
+        keypoints=keypoints,
+        team_assigner=assigner,
         config=PipelineConfig(
             fps=fps,
             pitch_length=args.pitch_length,
@@ -307,6 +333,12 @@ def build_parser() -> argparse.ArgumentParser:
                            help="inference resolution; below 1280 the ball is lost")
     p_analyse.add_argument("--pitch-length", type=float, default=105.0)
     p_analyse.add_argument("--pitch-width", type=float, default=68.0)
+    p_analyse.add_argument("--calibrator", choices=("camera", "lines"), default="camera",
+                           help="'camera' fits a physical camera from the centre "
+                                "circle, halfway line and pitch boundary (works on "
+                                "broadcast); 'lines' matches straight lines only")
+    p_analyse.add_argument("--no-teams", action="store_true",
+                           help="skip kit-colour fitting (players stay unassigned)")
     p_analyse.add_argument("--json", action="store_true")
     p_analyse.set_defaults(func=_cmd_analyse)
 
