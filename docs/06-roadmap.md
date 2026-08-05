@@ -141,7 +141,15 @@ a winger currently share a 7.8 m/s top speed.
 Also worth adding: acceleration limits, and ball flight time weighting — the
 two omissions that make the current model optimistic about distant space.
 
-### 2.3 Appearance-based re-identification
+### 2.3 Appearance-based re-identification — *now quantified*
+
+> **Measured:** motion-based tracklet stitching
+> (`offball.vision.stitch`) joins only 53 tracks into 47 on real footage. Of
+> 2352 candidate pairs, 1741 overlap in time (different players) and 508 have
+> gaps over 2 seconds — a player panned out of view and back. Constant-velocity
+> extrapolation cannot bridge those, and widening the window invents links
+> rather than finding them. **Appearance or jersey-number re-ID is the only way
+> past this**, and per-player reports depend on it.
 
 The tracker loses identity through a corner-kick scrum. `Tracker.associate` is
 the seam: add an appearance embedding and combine it with IoU.

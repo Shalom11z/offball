@@ -166,6 +166,8 @@ def _cmd_analyse(args: argparse.Namespace) -> int:
           f"({result.ball_detected_frames / max(total, 1):.0%})")
     print(f"  ball after repair    {result.ball_recovered_frames} "
           f"({result.ball_recovered_frames / max(total, 1):.0%})")
+    print(f"  tracks               {result.raw_tracks} -> {result.stitched_tracks} "
+          f"after stitching (22 players are on the pitch)")
     print(f"  frames scored        {result.report.frames_scored} "
           f"(coverage {result.report.coverage:.0%})")
     print()

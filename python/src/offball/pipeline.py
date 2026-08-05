@@ -15,14 +15,17 @@ Per frame (:meth:`Pipeline.process_frame`):
 
 Then over the whole sequence (:meth:`Pipeline.run`):
 
-6. **Reconstruct the ball** — reject impossible jumps, interpolate across
+6. **Rejoin track fragments** — link tracklets that are the same player,
+   using pitch-space motion. Without this each fragment carries a sample too
+   small to aggregate, and per-player figures describe glimpses.
+7. **Reconstruct the ball** — reject impossible jumps, interpolate across
    occlusions. This has to look forward as well as back, which is why it is a
    pass rather than a per-frame step, and it is what stops a detector's missed
    ball frames from silently discarding most of the match.
-7. **Assign possession** — nearest player to the repaired ball, with
+8. **Assign possession** — nearest player to the repaired ball, with
    hysteresis.
-8. **Score** — off-the-ball metrics per frame.
-9. **Aggregate** — the match report.
+9. **Score** — off-the-ball metrics per frame.
+10. **Aggregate** — the match report.
 
 Parallelising is a scaling concern handled at the job level (one worker per
 match), not inside the per-frame loop, where the ordering dependencies above
@@ -45,6 +48,7 @@ from .vision.calibration import (
     HomographySmoother,
     calibrate_frame,
 )
+from .vision.stitch import StitchConfig, apply_stitching, stitch_tracks
 from .vision.tracking import Tracker, TrackerConfig
 
 __all__ = ["Pipeline", "PipelineConfig", "PipelineResult", "PossessionTracker"]
@@ -60,6 +64,8 @@ class PipelineConfig:
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     #: Ball trajectory reconstruction: outlier rejection and gap interpolation.
     ball: BallConfig = field(default_factory=BallConfig)
+    #: Rejoining track fragments of the same player. Set to None to disable.
+    stitch: StitchConfig | None = field(default_factory=StitchConfig)
     #: Frames of position history used for the velocity estimate. Five frames
     #: at 25fps is 0.2s: long enough to suppress tracking jitter, short enough
     #: to still register a sharp change of direction.
@@ -169,6 +175,11 @@ class PipelineResult:
     #: Frames with a ball position after gap interpolation. The difference
     #: against `ball_detected_frames` is what the reconstruction recovered.
     ball_recovered_frames: int = 0
+    #: Distinct track ids before fragments were rejoined.
+    raw_tracks: int = 0
+    #: Distinct track ids after. Compare against the 22 players actually on the
+    #: pitch to judge how fragmented the tracking was.
+    stitched_tracks: int = 0
 
 
 class Pipeline:
@@ -293,13 +304,22 @@ class Pipeline:
             if state.is_calibrated:
                 calibrated += 1
 
-        # Pass 2: repair the ball trajectory.
+        # Pass 2: rejoin track fragments. Must run before scoring, since it
+        # is what gives each player a sample worth aggregating, and after the
+        # vision pass, because it works in pitch coordinates.
+        raw_tracks = len({p.track_id for st in states for p in st.players})
+        if cfg.stitch is not None:
+            mapping = stitch_tracks(states, cfg.fps, cfg.stitch)
+            states = apply_stitching(states, mapping)
+        stitched_tracks = len({p.track_id for st in states for p in st.players})
+
+        # Pass 3: repair the ball trajectory.
         raw_ball = [s.ball_pitch_xy for s in states]
         detected_ball = sum(1 for p in raw_ball if p is not None)
         ball = smooth_ball_track(raw_ball, cfg.fps, cfg.ball)
         recovered_ball = sum(1 for p in ball if p is not None)
 
-        # Pass 3: re-derive possession from the repaired track.
+        # Pass 4: re-derive possession from the repaired track.
         self.possession.reset()
         states = [
             replace(
@@ -310,7 +330,7 @@ class Pipeline:
             for state, xy in zip(states, ball, strict=True)
         ]
 
-        # Pass 4: score.
+        # Pass 5: score.
         scores = [
             score
             for score in (score_frame(state, cfg.scoring) for state in states)
@@ -325,4 +345,6 @@ class Pipeline:
             rejected_calibrations=self.smoother.rejected,
             ball_detected_frames=detected_ball,
             ball_recovered_frames=recovered_ball,
+            raw_tracks=raw_tracks,
+            stitched_tracks=stitched_tracks,
         )
