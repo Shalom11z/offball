@@ -57,7 +57,15 @@ for exactly this.
 **The classical path is verified on synthetic renders only.** Its real-footage
 behaviour is unmeasured, and that measurement is 1.3 below.
 
-### 1.2 Fine-tuned detector
+### 1.2 Fine-tuned detector — *confirmed as the bottleneck, not a threshold*
+
+> **Measured:** a stock COCO YOLO emits **3.2 "sports ball" candidates per
+> frame** (up to 9) at confidence 0.03, at most one of which is the ball.
+> Lowering the threshold raises raw recall from 32% to 57% and *reduces* usable
+> ball positions from 58% to 54%, because nothing in the geometry separates a
+> small white blob moving plausibly from a football. A Viterbi trajectory pass
+> over the candidates did not rescue it either. This is a detector problem and
+> only a detector fixes it.
 
 COCO-pretrained YOLO finds players acceptably and the ball badly.
 

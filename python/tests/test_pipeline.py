@@ -7,6 +7,8 @@ whole point of the injected-dependency design in :class:`offball.pipeline.Pipeli
 
 from __future__ import annotations
 
+import math
+
 from offball import kernels
 from offball.pipeline import Pipeline, PipelineConfig, PossessionTracker
 from offball.tactics.offball import ScoringConfig
@@ -262,3 +264,38 @@ def test_possession_ignores_untracked_and_unteamed_players():
     unknown = PlayerObservation(1, BBox(0, 0, 1, 1), Team.UNKNOWN, pitch_xy=(50.0, 34.0))
     assert tracker.update((50.0, 34.0), [unknown]) is None
     assert tracker.update(None, []) is None
+
+
+# ------------------------------------------------------- ball candidate choice
+
+
+def test_highest_confidence_ball_is_used():
+    """At the low threshold the ball is detected at, several candidates a frame
+    are normal; taking the first would pick an arbitrary one."""
+    detections, keypoints = scripted_move(6)
+    truth_pitch = (60.0, 20.0)
+    decoy_pitch = (20.0, 60.0)
+
+    for frame_dets in detections:
+        # Drop the scripted ball, then add a weak decoy and a strong true ball.
+        frame_dets[:] = [d for d in frame_dets if not d.is_ball]
+        dx, dy = kernels.project(PITCH_TO_IMAGE, [decoy_pitch])[0]
+        frame_dets.append(Detection(BBox(dx - 5, dy - 10, dx + 5, dy), 0.06, "ball"))
+        tx, ty = kernels.project(PITCH_TO_IMAGE, [truth_pitch])[0]
+        frame_dets.append(Detection(BBox(tx - 5, ty - 10, tx + 5, ty), 0.80, "ball"))
+
+    pipeline = Pipeline(
+        detector=ScriptedDetector(detections),
+        keypoints=ScriptedKeypoints(keypoints),
+        team_assigner=FixedTeamAssigner(attacker_ids={1, 2, 3, 4, 5}),
+        config=PipelineConfig(
+            scoring=FAST_SCORING,
+            calibration=CalibrationConfig(ransac_threshold=2.0, min_inliers=6),
+            tracker=TrackerConfig(iou_threshold=0.2),
+        ),
+    )
+    result = pipeline.run(fake_frames(6))
+    placed = [f.ball_pitch_xy for f in result.frames if f.ball_pitch_xy is not None]
+    assert placed, "a ball position should have been recovered"
+    # The strong detection wins, so the ball lands near the true position.
+    assert math.dist(placed[-1], truth_pitch) < math.dist(placed[-1], decoy_pitch)

@@ -42,7 +42,7 @@ from dataclasses import dataclass, field, replace
 from .tactics.offball import FrameScore, ScoringConfig, score_frame
 from .tactics.report import MatchReport, build_report
 from .types import Detection, FrameState, PlayerObservation, Point, Team
-from .vision.ball import BallConfig, smooth_ball_track
+from .vision.ball import BallConfig, select_ball_trajectory, smooth_ball_track
 from .vision.calibration import (
     CalibrationConfig,
     HomographySmoother,
@@ -214,12 +214,15 @@ class Pipeline:
             self.config.possession_hysteresis, self.config.possession_max_distance
         )
         self._velocity = _VelocityEstimator(self.config.velocity_window, self.config.fps)
+        #: (frame_index, pitch_xy, confidence) for every ball candidate seen.
+        self._ball_candidates: list[tuple[int, Point, float]] = []
 
     def reset(self) -> None:
         self.tracker.reset()
         self.smoother.reset()
         self.possession.reset()
         self._velocity.reset()
+        self._ball_candidates.clear()
 
     def process_frame(self, frame, frame_index: int) -> FrameState:
         """Run one frame through detection, tracking, calibration and projection."""
@@ -237,6 +240,7 @@ class Pipeline:
         )
 
         ball_xy: Point | None = None
+        best_ball_conf = -1.0
         if calibration is not None:
             image_points = [o.bbox.ground_point for o in observations]
             projected = calibration.to_pitch(image_points)
@@ -255,14 +259,21 @@ class Pipeline:
                 placed.append(obs.with_pitch(xy, v))
             observations = placed
 
-            ball_det = next((d for d in detections if d.is_ball), None)
-            if ball_det is not None:
-                ball_proj = calibration.to_pitch([ball_det.bbox.ground_point])[0]
-                if ball_proj is not None:
-                    ball_xy = (
-                        min(max(ball_proj[0], 0.0), cfg.pitch_length),
-                        min(max(ball_proj[1], 0.0), cfg.pitch_width),
-                    )
+            # Keep every ball candidate. At the low confidence the ball is
+            # detected at, several a frame are normal, and choosing between
+            # them per frame is what makes the extra recall a net loss; the
+            # trajectory pass in run() picks a whole path instead.
+            for det in (d for d in detections if d.is_ball):
+                proj = calibration.to_pitch([det.bbox.ground_point])[0]
+                if proj is None:
+                    continue
+                clamped = (
+                    min(max(proj[0], 0.0), cfg.pitch_length),
+                    min(max(proj[1], 0.0), cfg.pitch_width),
+                )
+                self._ball_candidates.append((frame_index, clamped, det.confidence))
+                if ball_xy is None or det.confidence > best_ball_conf:
+                    ball_xy, best_ball_conf = clamped, det.confidence
 
         attacking = self.possession.update(ball_xy, observations)
 
@@ -313,9 +324,14 @@ class Pipeline:
             states = apply_stitching(states, mapping)
         stitched_tracks = len({p.track_id for st in states for p in st.players})
 
-        # Pass 3: repair the ball trajectory.
-        raw_ball = [s.ball_pitch_xy for s in states]
-        detected_ball = sum(1 for p in raw_ball if p is not None)
+        # Pass 3: repair the ball trajectory. Choose the best *path* through
+        # the per-frame candidates first, then smooth and interpolate it.
+        detected_ball = sum(1 for s in states if s.ball_pitch_xy is not None)
+        per_frame: list[list[tuple[Point, float]]] = [[] for _ in states]
+        for index, xy, confidence in self._ball_candidates:
+            if 0 <= index < len(per_frame):
+                per_frame[index].append((xy, confidence))
+        raw_ball = select_ball_trajectory(per_frame, cfg.fps, cfg.ball)
         ball = smooth_ball_track(raw_ball, cfg.fps, cfg.ball)
         recovered_ball = sum(1 for p in ball if p is not None)
 

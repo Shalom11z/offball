@@ -43,9 +43,35 @@ class Detector(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class DetectorConfig:
-    #: Minimum confidence to emit a detection at all. Tracking does its own,
+    #: Minimum confidence for player detections. Tracking does its own,
     #: stricter filtering for track *initialisation*.
     confidence: float = 0.25
+    #: Minimum confidence for the **ball**, kept separate from players so the
+    #: two can be tuned independently.
+    #:
+    #: Left equal to the player threshold, because lowering it was **measured
+    #: to make things worse**, which was not the expected result:
+    #:
+    #: ===========  ========  =========  ========
+    #: ball_conf    detected  usable     coverage
+    #: ===========  ========  =========  ========
+    #: 0.25              32%       58%       56%
+    #: 0.05              55%       54%       51%
+    #: 0.03              57%       54%       51%
+    #: ===========  ========  =========  ========
+    #:
+    #: Raw recall nearly doubles and usable output falls. At 0.03 a COCO YOLO
+    #: emits **3.2 "sports ball" candidates per frame** (up to 9), of which at
+    #: most one is the ball; the rest are boots, markings and stray white
+    #: patches, scattered rather than in one fixed place. Neither per-frame
+    #: selection nor the Viterbi trajectory pass in
+    #: :func:`~offball.vision.ball.select_ball_trajectory` reliably picks the
+    #: right one, because nothing in the geometry distinguishes a small white
+    #: blob that moves plausibly from the ball.
+    #:
+    #: The fix is a detector that knows what a football looks like, not a
+    #: threshold. See ``docs/06-roadmap.md``.
+    ball_confidence: float = 0.25
     #: NMS IoU threshold.
     iou: float = 0.7
     #: Longest-side input resolution. 1280 rather than the usual 640: the ball
@@ -90,9 +116,12 @@ class YoloDetector:
         self._model = YOLO(weights)
 
     def detect(self, frame) -> list[Detection]:
+        # Run at the lower of the two thresholds and filter per class below,
+        # so the ball can be kept at a confidence that would flood the frame
+        # with spurious players.
         results = self._model.predict(
             frame,
-            conf=self.config.confidence,
+            conf=min(self.config.confidence, self.config.ball_confidence),
             iou=self.config.iou,
             imgsz=self.config.image_size,
             device=self.config.device,
@@ -106,8 +135,16 @@ class YoloDetector:
                 label = self.class_map.get(raw_name)
                 if label is None:
                     continue
+                confidence = float(box.conf)
+                floor = (
+                    self.config.ball_confidence
+                    if label == "ball"
+                    else self.config.confidence
+                )
+                if confidence < floor:
+                    continue
                 x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
-                out.append(Detection(BBox(x1, y1, x2, y2), float(box.conf), label))
+                out.append(Detection(BBox(x1, y1, x2, y2), confidence, label))
         return out
 
 
