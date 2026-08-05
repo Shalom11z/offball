@@ -387,8 +387,25 @@ into one unfittable blob), but that same erasure splits the circle into arcs
 whose closed contours are thin slivers and fail the eccentricity test.
 Morphological closing to rejoin them merges the whole pitch outline instead.
 
-**A conic fit over the line-mask pixels with RANSAC, rather than contour
-tracing, is the way out** — it needs no erasure and tolerates the halfway line
+**Conic fitting is implemented and verified** (`fit_conic`,
+`conic_ellipse_params`): five points on an ellipse recover its centre and both
+semi-axes exactly, at any coordinate scale. Two bugs had to be fixed to get
+there, and both returned "not an ellipse" for a perfect one:
+
+* the design matrix was unnormalised — the `x²` column is ~1e5 against a
+  constant column of 1, so the SVD null vector followed scale rather than
+  geometry. It needs the same Hartley normalisation the homography solver
+  already uses;
+* the semi-axis closed form divides the whole root by the discriminant and
+  *multiplies* by the bracket; dividing by the bracket yields nothing.
+
+Driving it with RANSAC over the line mask is **not** yet usable. Maximising
+inlier count selects the wrong ellipse: large 31-46m curves threaded through
+scattered pixels beat the real 9.15m circle. A size prior, or scoring against
+the expected pitch geometry rather than raw inlier count, is what that needs.
+The contour-based path is retained in the meantime.
+
+The original reasoning still holds — it needs no erasure and tolerates the halfway line
 crossing the circle. That is the next concrete step and the last known blocker
 on this calibrator.
 

@@ -57,7 +57,14 @@ from .camera import CameraFit, fit_camera
 from .lines import PitchLineConfig, detect_lines, line_mask, pitch_mask
 from .lines import _invert as _invert_h
 
-__all__ = ["BroadcastCalibrator", "BroadcastConfig", "PitchEvidence", "extract_evidence"]
+__all__ = [
+    "BroadcastCalibrator",
+    "BroadcastConfig",
+    "PitchEvidence",
+    "conic_ellipse_params",
+    "extract_evidence",
+    "fit_conic",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +177,102 @@ def _ellipse_inliers(points: list[Point], ellipse, tolerance: float) -> list[Poi
         if abs(r - 1.0) * min(a, b) <= tolerance:
             keep.append((x, y))
     return keep
+
+
+def fit_conic(points) -> np.ndarray | None:  # noqa: F821
+    """Conic through 5 points, as ``[a, b, c, d, e, f]`` for
+    ``ax² + bxy + cy² + dx + ey + f = 0``.
+
+    The null vector of the 5x6 design matrix. Returns ``None`` when the points
+    are degenerate.
+    """
+    import numpy as np
+
+    # Normalise before fitting. Without it the design matrix is hopelessly
+    # ill-conditioned — the x² column is ~1e5 while the constant column is 1 —
+    # and the SVD null vector is dominated by scale rather than geometry,
+    # returning a degenerate conic for even a perfect ellipse. This is the same
+    # Hartley normalisation the homography solver uses.
+    centre = points.mean(axis=0)
+    centred = points - centre
+    scale = np.sqrt((centred**2).sum(axis=1)).mean()
+    if scale < 1e-9:
+        return None
+    normed = centred / scale
+
+    x = normed[:, 0]
+    y = normed[:, 1]
+    design = np.column_stack([x * x, x * y, y * y, x, y, np.ones_like(x)])
+    try:
+        _, _, vt = np.linalg.svd(design)
+    except np.linalg.LinAlgError:  # pragma: no cover - numerical blow-up
+        return None
+
+    a, b, c, d, e, f = vt[-1]
+    # Undo the normalisation: substitute x -> (x - cx)/s into the conic and
+    # expand, so the returned coefficients apply to the original pixels.
+    cx, cy = centre
+    s2 = scale * scale
+    return np.array([
+        a / s2,
+        b / s2,
+        c / s2,
+        (-2 * a * cx - b * cy) / s2 + d / scale,
+        (-2 * c * cy - b * cx) / s2 + e / scale,
+        (a * cx * cx + b * cx * cy + c * cy * cy) / s2
+        - (d * cx + e * cy) / scale
+        + f,
+    ])
+
+
+def conic_ellipse_params(conic):
+    """Centre and semi-axes of a conic, or ``None`` if it is not an ellipse.
+
+    A conic is an ellipse when its discriminant ``b² - 4ac`` is negative;
+    hyperbolas and parabolas are what a bad 5-point sample usually produces, and
+    rejecting them cheaply is most of what makes the search tractable.
+    """
+    import math as _math
+
+    a, b, c, d, e, f = (float(v) for v in conic)
+    disc = b * b - 4 * a * c
+    if disc >= -1e-12:
+        return None
+    cx = (2 * c * d - b * e) / disc
+    cy = (2 * a * e - b * d) / disc
+    # Standard closed form for the semi-axes of a general conic. The factor
+    # multiplies the bracket and the whole root is divided by the discriminant;
+    # dividing by the bracket instead (as an earlier version did) yields None
+    # for every genuine ellipse.
+    num = 2 * (a * e * e + c * d * d + f * b * b - b * d * e - 4 * a * c * f)
+    root = _math.sqrt(max((a - c) ** 2 + b * b, 0.0))
+    t1 = num * ((a + c) + root)
+    t2 = num * ((a + c) - root)
+    if t1 < 0 or t2 < 0:
+        return None
+    axis1 = -_math.sqrt(t1) / disc
+    axis2 = -_math.sqrt(t2) / disc
+    if axis1 <= 0 or axis2 <= 0:
+        return None
+    return (cx, cy), (axis1, axis2)
+
+
+def _conic_distance(conic, pts):
+    """Sampson (first-order geometric) distance from points to a conic.
+
+    The raw algebraic residual scales with the conic's coefficients and is
+    useless as a pixel threshold; dividing by the gradient magnitude makes it
+    an approximate distance in pixels, which is what an inlier test needs.
+    """
+    import numpy as np
+
+    a, b, c, d, e, f = conic
+    x, y = pts[:, 0], pts[:, 1]
+    value = a * x * x + b * x * y + c * y * y + d * x + e * y + f
+    gx = 2 * a * x + b * y + d
+    gy = b * x + 2 * c * y + e
+    grad = np.sqrt(gx * gx + gy * gy) + 1e-9
+    return np.abs(value) / grad
 
 
 def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvidence:

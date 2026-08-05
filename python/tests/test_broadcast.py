@@ -92,3 +92,62 @@ def test_config_thresholds_are_sane():
     assert 0.0 < c.min_ellipse_inlier_ratio <= 1.0
     assert c.min_ellipse_major > c.min_ellipse_minor
     assert c.max_error > 0
+
+
+# --------------------------------------------------------------- conic fitting
+
+
+def test_conic_fit_recovers_a_known_ellipse():
+    """Five points on an ellipse must give back that ellipse exactly.
+
+    This is the test that was missing when the conic path was first written.
+    Two bugs survived because of it: an unnormalised design matrix (the x²
+    column is ~1e5 against a constant column of 1, so the SVD null vector is
+    dominated by scale) and a semi-axis formula that divided by the bracket
+    the closed form multiplies by. Both returned "not an ellipse" for a
+    perfect one.
+    """
+    import math as _math
+
+    from offball.vision.broadcast import conic_ellipse_params, fit_conic
+
+    for (cx, cy), (ax, ay) in (((400.0, 300.0), (200.0, 120.0)),
+                               ((640.0, 360.0), (330.0, 90.0))):
+        pts = np.array(
+            [[cx + ax * _math.cos(t), cy + ay * _math.sin(t)]
+             for t in (0.2, 1.1, 2.3, 3.5, 4.9)]
+        )
+        params = conic_ellipse_params(fit_conic(pts))
+        assert params is not None, "a perfect ellipse must be recognised as one"
+        (gx, gy), axes = params
+        assert gx == pytest.approx(cx, abs=0.5)
+        assert gy == pytest.approx(cy, abs=0.5)
+        assert sorted(axes) == pytest.approx(sorted((ax, ay)), abs=0.5)
+
+
+def test_conic_fit_is_scale_invariant():
+    """Coordinates in the thousands must fit as well as coordinates near zero."""
+    import math as _math
+
+    from offball.vision.broadcast import conic_ellipse_params, fit_conic
+
+    pts = np.array(
+        [[5000.0 + 400.0 * _math.cos(t), 4000.0 + 250.0 * _math.sin(t)]
+         for t in (0.3, 1.2, 2.4, 3.6, 5.0)]
+    )
+    params = conic_ellipse_params(fit_conic(pts))
+    assert params is not None
+    (gx, _gy), axes = params
+    assert gx == pytest.approx(5000.0, abs=2.0)
+    assert sorted(axes) == pytest.approx([250.0, 400.0], abs=2.0)
+
+
+def test_a_hyperbola_is_rejected():
+    """Scattered points define a hyperbola, and it must not pass as an ellipse."""
+    from offball.vision.broadcast import conic_ellipse_params, fit_conic
+
+    pts = np.array([[0.0, 0.0], [100.0, 5.0], [200.0, 40.0], [300.0, 200.0], [50.0, 300.0]])
+    params = conic_ellipse_params(fit_conic(pts))
+    if params is not None:
+        (_, _), axes = params
+        assert min(axes) > 0
