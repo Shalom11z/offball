@@ -34,9 +34,13 @@ def broadcast_frame(width=1280, height=720):
 
     white = (245, 245, 245)
     # Halfway line, slightly off vertical as a real camera would show it.
+    # NOTE: the halfway line is drawn slightly off the circle's centre. On a
+    # real pitch it bisects the circle, which splits the arc in two once
+    # straight lines are erased for ellipse detection. That split is a genuine
+    # weakness of the contour-based circle finder and is tracked separately;
+    # this fixture keeps them apart so it tests extraction, not that bug.
     cv2.line(frame, (width // 2 - 18, horizon), (width // 2 + 26, height), white, 3,
              cv2.LINE_AA)
-    # Centre circle as a perspective ellipse.
     cv2.ellipse(frame, (width // 2, int(height * 0.60)), (int(width * 0.26),
                 int(height * 0.17)), 0, 0, 360, white, 3, cv2.LINE_AA)
     return frame

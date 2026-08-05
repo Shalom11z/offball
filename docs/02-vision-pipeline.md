@@ -287,6 +287,51 @@ The classical detector is kept: it is correct where it applies, costs nothing,
 and is an honest baseline to measure a learned model against. It should not be
 relied on for broadcast footage.
 
+### Measured against ground truth: the camera fit is NOT accurate
+
+The SoccerNet-Calibration split (3141 annotated broadcast frames) provides a
+ground-truth homography per image. It is **openly downloadable via HuggingFace**
+and needs no NDA — the video NDA is a separate thing, and the older ownCloud
+route is what rejects the video password.
+
+Running the camera calibrator against it, restricted to the centre views it is
+designed for:
+
+===================  ==========  ============  =========
+Configuration        Calibrated  Median error  Under 5 m
+===================  ==========  ============  =========
+Camera fit                  83%       51.3 m         0%
++ support guard              6%       34.4 m         0%
+===================  ==========  ============  =========
+
+**51 metres is about half a pitch.** The calibrator is not measuring the pitch;
+it is producing a confident, self-consistent, wrong answer on most frames.
+
+This matters beyond the number. Every earlier quality claim about this
+calibrator rested on two things — a low fit residual and overlays that put the
+template neatly on the paint — and **neither detects this failure**. The
+residual only says the camera explains the three cues it was handed. An overlay
+can look perfect for a homography that is badly wrong, because the projected
+template lands on paint either way. Ground truth caught in one run what visual
+inspection structurally cannot.
+
+Three hypotheses for the cause were tested and all rejected:
+
+1. **A penalty arc mistaken for the centre circle.** Plausible — the two are
+   similar ellipses and the shift is about the right size. Requiring the
+   ellipse centre to lie on the halfway line, which is true of the centre circle
+   and not of an arc, did not change the median.
+2. **The pitch's mirror symmetry.** 51m is suspiciously close to half of 105m.
+   Scoring all four symmetry variants against the paint and taking the best did
+   not change the median.
+3. **Unverified fits.** Adding a support check against the whole projected
+   template cut the accept rate from 83% to 6% without improving accuracy — it
+   rejects good and bad alike.
+
+The cause is still unknown. The finding stands on its own and is more useful
+than the fix would have been on its own: **do not treat these coordinates as
+measurements until this is resolved.**
+
 ### The fix: fit a camera, not a homography
 
 `offball.vision.broadcast` solves the same footage by taking option 1 above.

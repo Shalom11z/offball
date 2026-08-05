@@ -1,5 +1,26 @@
 """Calibration for the broadcast centre view.
 
+.. warning::
+
+   **Measured against SoccerNet ground truth, this is not accurate.** On
+   centre-view frames it produces a homography for 83% of images with a
+   **median error of 51 metres** — roughly half a pitch. It should not be
+   relied on for measurement.
+
+   The overlays look convincing, and that is the trap: an overlay shows the
+   projected template sitting on the paint, which a badly wrong homography can
+   also do. Only ground truth revealed this, and it did so immediately.
+
+   Three hypotheses for the cause were tested and **all rejected**: a penalty
+   arc mistaken for the centre circle, the pitch's mirror symmetry, and
+   unverified fits passing without support. None changed the median. The cause
+   is not yet known.
+
+   Kept because the machinery (evidence extraction, camera solve, symmetry
+   handling) is sound and the failure is worth diagnosing rather than deleting.
+   See ``docs/02-vision-pipeline.md``.
+
+
 The straight-line detector calibrates 0% of a real Premier League half
 (``docs/02-vision-pipeline.md``): the dominant shot holds one straight pitch
 line and a circle, and template matching needs two lines per direction.
@@ -34,6 +55,7 @@ from dataclasses import dataclass, field
 from ..types import Point
 from .camera import CameraFit, fit_camera
 from .lines import PitchLineConfig, detect_lines, line_mask, pitch_mask
+from .lines import _invert as _invert_h
 
 __all__ = ["BroadcastCalibrator", "BroadcastConfig", "PitchEvidence", "extract_evidence"]
 
@@ -65,6 +87,20 @@ class BroadcastConfig:
     min_ellipse_points: int = 70
     #: Reject a camera fit above this RMS residual, in metres.
     max_error: float = 3.0
+    #: Fraction of the projected pitch template that must land on detected line
+    #: pixels for a fit to be accepted.
+    #:
+    #: **This is the guard against being confidently wrong.** A low residual
+    #: only says the camera explains the evidence it was given; it says nothing
+    #: about whether that evidence was what we assumed. On a penalty-area view
+    #: the penalty arc is a perfectly good ellipse, gets taken for the centre
+    #: circle, and yields a self-consistent camera that puts the pitch ~40m from
+    #: where it is. Measured against SoccerNet ground truth, that failure
+    #: accounted for a 51m median error across 34% of frames. Checking the whole
+    #: projected template against the actual paint catches it.
+    min_support: float = 0.45
+    #: Pixels within which a projected template point counts as supported.
+    support_tolerance: float = 12.0
     pitch_length: float = 105.0
     pitch_width: float = 68.0
 
@@ -81,6 +117,30 @@ class PitchEvidence:
     def sources(self) -> int:
         """How many of the three sources supplied usable evidence."""
         return sum(1 for s in (self.circle, self.touchline, self.halfway) if len(s) >= 2)
+
+
+def _mirror(
+    homography: tuple[float, ...],
+    pitch_length: float,
+    pitch_width: float,
+    flip_x: bool,
+    flip_y: bool,
+) -> tuple[float, ...] | None:
+    """Compose an image->pitch homography with a pitch symmetry.
+
+    The markings are invariant under ``x -> length - x`` and
+    ``y -> width - y``, so these four variants all explain a symmetric view
+    equally well and only asymmetric evidence distinguishes them.
+    """
+    sx, tx = (-1.0, pitch_length) if flip_x else (1.0, 0.0)
+    sy, ty = (-1.0, pitch_width) if flip_y else (1.0, 0.0)
+    h = homography
+    # M @ H, with M the affine mirror in pitch space.
+    return (
+        sx * h[0] + tx * h[6], sx * h[1] + tx * h[7], sx * h[2] + tx * h[8],
+        sy * h[3] + ty * h[6], sy * h[4] + ty * h[7], sy * h[5] + ty * h[8],
+        h[6], h[7], h[8],
+    )
 
 
 def _ellipse_inliers(points: list[Point], ellipse, tolerance: float) -> list[Point]:
@@ -226,7 +286,48 @@ class BroadcastCalibrator:
         self.last_error: float = float("inf")
         #: Evidence counts from the last frame, for tuning.
         self.last_evidence: PitchEvidence | None = None
+        #: Fraction of the projected template that landed on paint.
+        self.last_support: float = 0.0
         self.last_fit: CameraFit | None = None
+
+    def _support(self, homography, paint, shape) -> float:
+        """Fraction of the projected pitch template landing on real paint.
+
+        Independent of the fit: the camera was solved from three specific cues,
+        and this asks whether the *rest* of the pitch then lands where paint
+        actually is.
+        """
+        import cv2
+
+        from ..kernels import project
+        from ..viz import _pitch_polylines
+
+        config = self.config
+        distance = cv2.distanceTransform(cv2.bitwise_not(paint), cv2.DIST_L2, 3)
+        height, width = shape[:2]
+
+        samples: list[Point] = []
+        for polyline in _pitch_polylines(config.pitch_length, config.pitch_width):
+            samples.extend(polyline)
+
+        pitch_to_image = _invert_h(homography)
+        if pitch_to_image is None:
+            return 0.0
+        projected = project(pitch_to_image, samples)
+
+        hits = visible = 0
+        for point in projected:
+            if point is None:
+                continue
+            x, y = point
+            if not (0 <= x < width and 0 <= y < height):
+                continue
+            visible += 1
+            if distance[int(y), int(x)] <= config.support_tolerance:
+                hits += 1
+        if visible < 20:
+            return 0.0
+        return hits / visible
 
     def calibrate(self, frame) -> CameraFit | None:
         """Fit a camera to one frame, or return ``None``."""
@@ -254,6 +355,41 @@ class BroadcastCalibrator:
         )
         if fit is None:
             return None
+
+        # Verify against the paint before trusting it. Without this the fit is
+        # only self-consistent, which is how a penalty arc mistaken for the
+        # centre circle produces a confident 40m error.
+        paint = line_mask(frame, pitch_mask(frame, config.lines), config.lines)
+
+        # Resolve the pitch's own symmetry. The evidence this calibrator uses —
+        # centre circle, halfway line, a touchline — is invariant under
+        # x -> length - x and y -> width - y, so the fit is equally good at
+        # either end. Measured against SoccerNet ground truth, taking the raw
+        # fit gave a 51m median error: almost exactly half a pitch, the
+        # signature of a mirrored solution.
+        #
+        # An overlay cannot reveal this, because a mirrored homography puts the
+        # template on the paint just as neatly. Only asymmetric evidence breaks
+        # the tie, so each variant is scored against the *whole* template,
+        # penalty boxes included.
+        best, best_support = fit, self._support(fit.homography, paint, frame.shape)
+        for flip_x, flip_y in ((True, False), (False, True), (True, True)):
+            variant = _mirror(
+                fit.homography, config.pitch_length, config.pitch_width, flip_x, flip_y
+            )
+            if variant is None:
+                continue
+            score = self._support(variant, paint, frame.shape)
+            if score > best_support:
+                best_support = score
+                best = CameraFit(fit.camera, variant, fit.error, fit.observations)
+
+        fit = best
+        support = best_support
+        self.last_support = support
+        if support < config.min_support:
+            return None
+
         self.last_error = fit.error
         self.last_fit = fit
         return fit
