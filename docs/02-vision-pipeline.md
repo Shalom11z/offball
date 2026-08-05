@@ -315,7 +315,40 @@ can look perfect for a homography that is badly wrong, because the projected
 template lands on paint either way. Ground truth caught in one run what visual
 inspection structurally cannot.
 
-Three hypotheses for the cause were tested and all rejected:
+### Causes found, using ground truth as an oracle
+
+Guessing at whole hypotheses failed three times. What worked was projecting each
+*evidence source* through the known-correct ground-truth homography and asking
+what it really is. That located two concrete bugs immediately:
+
+**1. `cv2.fitEllipse` does not sort its axes.** It returns `(width, height)` of
+the rotated box, in that order. The code treated the first as the major axis, so
+size and eccentricity filters compared the wrong ones and rejected legitimate
+centre circles — real frames returned axes like `(90, 489)`. Fixed; on a sample
+frame the detected circle now measures **9.10m radius against a true 9.15m**.
+
+**2. The "halfway line" was frequently a penalty-area line.** The heuristic took
+the strongest steeply-angled Hough line. Projected through ground truth, that
+line landed at **x = 16.3 and x = 88.6** — the penalty-area lines — while the
+solver was told it was `x = 52.5`. A 36m lie fed straight into the fit, which is
+the right order of magnitude for the observed error. The halfway line is now
+only accepted if it bisects a detected centre circle, and the frame abstains
+when no circle corroborates it.
+
+A third convention issue was confirmed but is *not* the dominant term: the
+pitch-mask boundary corresponds to `y = 0` in some frames and `y = width` in
+others, depending which side the camera is on. Both hypotheses are now fitted
+and the better kept; this did not move the median.
+
+### Still unresolved
+
+After both fixes the accept rate falls from 83% to 37% — fewer confidently wrong
+answers — but the median error on those remains **~50m**. Something further is
+wrong and is not yet identified. The fixes above are verified individually
+against the oracle and are worth keeping regardless; the calibrator is still not
+safe to treat as a measurement.
+
+The earlier hypotheses, all tested and rejected before the oracle approach:
 
 1. **A penalty arc mistaken for the centre circle.** Plausible — the two are
    similar ellipses and the shift is about the right size. Requiring the

@@ -189,6 +189,7 @@ def fit_camera(
     pitch_width: float = 68.0,
     initial: CameraModel | None = None,
     max_error: float = 3.0,
+    touchline_y: float | None = None,
 ) -> CameraFit | None:
     """Fit a camera to whatever pitch evidence a frame offers.
 
@@ -224,6 +225,24 @@ def fit_camera(
     if sources < 2:
         return None
 
+    # Which touchline the pitch-mask boundary corresponds to depends on which
+    # side of the pitch the camera sits. Asserting one of them is a 68m lie
+    # half the time, so when unspecified both are tried and the better fit
+    # kept. Measured against ground truth, the boundary landed at y~0 in some
+    # frames and y~68 in others.
+    if touchline_y is None and touchline_points:
+        best_fit = None
+        for candidate in (0.0, pitch_width):
+            attempt = fit_camera(
+                image_width, image_height, circle_points, touchline_points,
+                halfway_points, pitch_length, pitch_width, initial, max_error,
+                touchline_y=candidate,
+            )
+            if attempt is not None and (best_fit is None or attempt.error < best_fit.error):
+                best_fit = attempt
+        return best_fit
+    target_y = pitch_width if touchline_y is None else touchline_y
+
     centre = (pitch_length / 2.0, pitch_width / 2.0)
     init = initial or broadcast_prior(image_width, image_height, pitch_length)
     cx, cy = init.cx, init.cy
@@ -255,10 +274,10 @@ def fit_camera(
         for pt in circle_points:
             q = to_pitch(pt)
             out.append(1e3 if q is None else math.dist(q, centre) - 9.15)
-        # Far touchline: y = pitch_width.
+        # Touchline: whichever side the camera is on.
         for pt in touchline_points:
             q = to_pitch(pt)
-            out.append(1e3 if q is None else q[1] - pitch_width)
+            out.append(1e3 if q is None else q[1] - target_y)
         # Halfway line: x = pitch_length / 2.
         for pt in halfway_points:
             q = to_pitch(pt)

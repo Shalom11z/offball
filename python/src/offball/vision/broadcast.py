@@ -87,6 +87,10 @@ class BroadcastConfig:
     min_ellipse_points: int = 70
     #: Reject a camera fit above this RMS residual, in metres.
     max_error: float = 3.0
+    #: How near the centre circle's centroid a steep line must pass to be
+    #: accepted as the halfway line, in pixels. The halfway line bisects the
+    #: centre circle; a penalty-area edge does not.
+    halfway_bisects_px: float = 70.0
     #: Fraction of the projected pitch template that must land on detected line
     #: pixels for a fit to be accepted.
     #:
@@ -202,6 +206,7 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
 
     # --- halfway line: the strongest steep line --------------------------
     halfway: list[Point] = []
+    halfway_line = None
     candidates = [
         line
         for line in lines
@@ -210,6 +215,7 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
     ]
     if candidates:
         best = max(candidates, key=lambda line: line.strength)
+        halfway_line = best
         cos_t, sin_t = math.cos(best.theta), math.sin(best.theta)
         for t in np.linspace(-height, height, 60):
             x = cos_t * best.rho - sin_t * t
@@ -243,7 +249,12 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
             ellipse = cv2.fitEllipse(contour)
         except cv2.error:
             continue
-        (ex, ey), (major, minor), _ = ellipse
+        # cv2.fitEllipse returns (width, height) of the rotated box, in that
+        # order and *not* sorted. Treating the first as the major axis rejects
+        # legitimate circles whose box happens to be taller than it is wide —
+        # measured on real frames returning axes like (90, 489).
+        (ex, ey), axes, _ = ellipse
+        major, minor = max(axes), min(axes)
         if major < config.min_ellipse_major or minor < config.min_ellipse_minor:
             continue
         if minor / major < config.min_axis_ratio:
@@ -260,6 +271,23 @@ def extract_evidence(frame, config: BroadcastConfig | None = None) -> PitchEvide
             continue
         if len(inliers) > len(circle):
             circle = inliers
+
+    # A steep line is only the halfway line if it bisects the centre circle.
+    # Without this check the strongest steep line is often a penalty-area edge,
+    # and calling that x = length/2 feeds the solver a ~36m lie. Measured
+    # against ground truth, the "halfway" line was landing at x = 16.3 and 88.6
+    # (the penalty-area lines) instead of 52.5.
+    if halfway and circle:
+        cx = sum(p[0] for p in circle) / len(circle)
+        cy = sum(p[1] for p in circle) / len(circle)
+        if halfway_line is not None:
+            cos_t, sin_t = math.cos(halfway_line.theta), math.sin(halfway_line.theta)
+            if abs(cx * cos_t + cy * sin_t - halfway_line.rho) > config.halfway_bisects_px:
+                halfway = []
+    elif halfway and not circle:
+        # No circle to corroborate it, so there is no way to tell the halfway
+        # line from a penalty-area edge. Abstain rather than guess.
+        halfway = []
 
     return PitchEvidence(circle=circle[::2], touchline=touchline, halfway=halfway)
 
