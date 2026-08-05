@@ -235,8 +235,11 @@ def fit_camera(
     try:
         import numpy as np
         from scipy.optimize import least_squares
-    except ImportError:  # pragma: no cover - depends on environment
-        return None
+    except ImportError as exc:  # pragma: no cover - depends on environment
+        raise ImportError(
+            "camera calibration needs numpy and scipy: "
+            "pip install 'offball[vision]'"
+        ) from exc
 
     circle_points = list(circle_points or [])
     touchline_points = list(touchline_points or [])
