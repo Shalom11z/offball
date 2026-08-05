@@ -287,6 +287,44 @@ The classical detector is kept: it is correct where it applies, costs nothing,
 and is an honest baseline to measure a learned model against. It should not be
 relied on for broadcast footage.
 
+### The fix: fit a camera, not a homography
+
+`offball.vision.broadcast` solves the same footage by taking option 1 above.
+**Measured on the same Premier League half: 45-50% of frames calibrate, median
+residual 0.27m**, against 0% for line matching.
+
+Three sources of evidence, each supplying what the others cannot:
+
+| Source | Where it comes from | Why it matters |
+| --- | --- | --- |
+| Far touchline | The **pitch mask boundary**, where grass meets the hoardings | Nothing is painted there, so Hough can never see it — yet it is present in ~80% of frames |
+| Halfway line | Paint | The one straight line the centre view reliably shows |
+| Centre circle | Fitted as an **ellipse** | Its 9.15m radius is a strong constraint; straight-line Hough actively destroys it |
+
+Two decisions carry the result:
+
+**Fit a camera, not a free homography.** The evidence supplies around nine
+constraints, but they are badly conditioned for an unconstrained 8-DOF fit,
+which wanders into projectively valid nonsense. A physical camera has 7 DOF and,
+crucially, cannot be underground or have negative focal length. Bounds on those
+parameters are what keep the solution honest.
+
+**Demand that a contour genuinely *is* an ellipse.** Requiring 65% of contour
+points to lie within 3px of the fitted ellipse is what separates a real centre
+circle from an arbitrary blob. Adding this single check moved the calibration
+rate from 10% to ~50%; without it the fit is fed hundreds of junk points.
+
+Residuals are expressed in **metres** by un-projecting detected image points
+onto the pitch — circle points should sit 9.15m from the centre spot, touchline
+points on `y = width` — so no arbitrary weighting between the three terms is
+needed.
+
+Verified visually as well as numerically: overlays of fitted frames put the
+projected circle and halfway line on the paint. Note the residual is a measure
+of self-consistency, not accuracy; there is still visible error of around a
+metre at the edges, and the remaining ~50% of frames (replays, close-ups, goal-
+mouth shots) are not solved by this at all.
+
 ## 5. Projection and velocity
 
 **Module**: [`offball/pipeline.py`](../python/src/offball/pipeline.py)
