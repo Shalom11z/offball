@@ -7,10 +7,12 @@ the other twenty-one players are doing — the runs that pull a centre-back out
 of position, the striker who holds the shoulder of the last defender, the
 winger who finds space nobody can pass to.
 
-> **Status: early alpha.** The tactical layer is implemented, tested and
-> usable today against tracking data from any source. Camera calibration works
-> without any trained model, via classical line detection. Player/ball
-> detection still needs weights, which do not ship here. See
+> **Status: early alpha.** The tactical layer is implemented, tested, and
+> usable today against tracking data from any source.
+>
+> **Camera calibration is not accurate.** Measured against SoccerNet
+> ground truth it has a ~49m median error — roughly half a pitch. Coordinates
+> produced from video should not be treated as measurements. See
 > [What works today](#what-works-today).
 
 ## Why four languages
@@ -34,7 +36,7 @@ otherwise identical.
 ```bash
 git clone https://github.com/Shalom11z/offball.git
 cd offball/python
-pip install -e '.[calibration,api,dev]'
+pip install -e '.[vision,api,dev]'
 offball demo
 ```
 
@@ -124,26 +126,29 @@ difference is the player or the model.
 | --- | --- |
 | Rust kernels | Complete. 39 tests, clippy clean |
 | Tactical metrics | Complete. Usable on tracking data from any provider |
-| Tracking, calibration, possession | Complete. Tested end to end with scripted input |
-| Team assignment | Implemented; needs real footage to validate |
-| Detection | Interface + Ultralytics wrapper. **No weights ship here** |
-| Pitch keypoints | Classical line detector (no model needed); a learned model is still the better answer |
+| Tracking, ball reconstruction, possession | Complete. Verified end to end on real footage |
+| Team assignment | Works on real footage; unvalidated against ground truth |
+| Detection | Ultralytics wrapper, defaults to yolo11m. Players good; ball ~70% |
+| **Calibration** | **~49m median error against ground truth. Not usable as measurement** |
 | HTTP API | Endpoints and job lifecycle complete; the worker fails loudly rather than returning a fabricated report until a detector is configured |
 | TypeScript SDK | Complete. 29 tests |
 | Postgres schema | Complete, not yet wired to the API |
+| Ground-truth benchmark | Complete. SoccerNet calibration split, no NDA needed |
 
-The honest summary: **calibration no longer needs a trained model.**
-`ClassicalKeypointSource` finds the painted lines with ordinary image
-processing and matches them to the pitch template, so the geometry works today.
-The remaining gap is detection: a stock YOLO finds players acceptably and the
-ball badly, and the ball is what possession — and therefore the direction of
-every off-ball metric — depends on. See [`docs/06-roadmap.md`](docs/06-roadmap.md).
+The honest summary: **calibration is the blocker.** The pipeline runs end to end
+on real Premier League footage and the metrics visibly separate player roles — a
+striker sits ~3m inside the last defender, a centre-back ~23m — but the pitch
+coordinates underneath them carry ~49m of error, so those figures are not yet
+measurements.
 
-The classical detector wants a clean, wide broadcast shot. It has been verified
-against synthetically rendered pitches, **not** against real footage; see the
-caveat in [`docs/02-vision-pipeline.md`](docs/02-vision-pipeline.md). The
-harness to measure it properly is built — `offball benchmark --soccernet` —
-and needs only the (NDA-gated) SoccerNet download to produce real figures.
+The cause is located, not merely suspected: the centre circle is never
+*proposed* by the circle finder, so no improvement to selection helps. Four
+selection strategies have been measured and ruled out, and the untried next step
+is recorded in [`docs/02-vision-pipeline.md`](docs/02-vision-pipeline.md). A
+trained pitch-keypoint model remains the reliable route.
+
+Everything downstream of calibration — tracking, ball reconstruction, team
+assignment, the metrics, the report — is built, tested, and waiting on it.
 
 ## Repository layout
 

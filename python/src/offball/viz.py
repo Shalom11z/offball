@@ -55,7 +55,7 @@ def _require_cv2():
     except ImportError as exc:  # pragma: no cover - depends on environment
         raise ImportError(
             "visualisation needs the 'calibration' extra: "
-            "pip install 'offball[calibration]'"
+            "pip install 'offball[vision]'"
         ) from exc
     return cv2
 
