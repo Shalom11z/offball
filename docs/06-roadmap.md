@@ -29,8 +29,12 @@ The goal is one real match, end to end. Nothing else matters until this works.
 > **Measured:** the classical detector calibrated **0 of 120 frames** on a real
 > Premier League half. A broadcast centre view offers one straight pitch line
 > and a circle; straight-line matching cannot work on it. See
-> [02 Vision pipeline](02-vision-pipeline.md). Either fit the centre circle as
-> an ellipse, or train this model.
+> [02 Vision pipeline](02-vision-pipeline.md). Fitting the centre circle as an
+> ellipse was then attempted: the conic maths works exactly, but four selection
+> strategies were measured and ruled out, and the failure turned out to be that
+> the true circle is never *proposed*, not that the wrong one is chosen. Seeding
+> RANSAC from connected arc segments is the untried next step. **Training this
+> model remains the reliable route.**
 
 `offball.vision.lines.ClassicalKeypointSource` now closes this without any
 training data: it masks the pitch, isolates paint with a morphological top-hat,

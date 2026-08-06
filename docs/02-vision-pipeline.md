@@ -399,15 +399,58 @@ there, and both returned "not an ellipse" for a perfect one:
 * the semi-axis closed form divides the whole root by the discriminant and
   *multiplies* by the bracket; dividing by the bracket yields nothing.
 
-Driving it with RANSAC over the line mask is **not** yet usable. Maximising
-inlier count selects the wrong ellipse: large 31-46m curves threaded through
-scattered pixels beat the real 9.15m circle. A size prior, or scoring against
-the expected pitch geometry rather than raw inlier count, is what that needs.
+Driving it with RANSAC over the line mask is **not** yet usable, and the reason
+turned out not to be the one it looked like.
+
+#### Four selection strategies, all ruled out
+
+Each was implemented and measured against SoccerNet ground truth on centre-view
+frames, where the true circle has a 9.15m radius:
+
+| Criterion | Result |
+| --- | --- |
+| Maximum inlier count | Picks ellipses of 31–46 m radius |
+| Angular arc coverage | Picks ellipses of 33–47 m radius |
+| Size bounds (max 700 px major) | Insufficient on its own |
+| Bonus for a bisecting line | Insufficient on its own |
+
+The reasoning behind arc coverage was that the centre circle is *painted*, so
+its inliers should run continuously around the curve while a spurious fit
+clumps. It fails because a pitch carries so much paint that a large conic can
+thread through the markings and score good coverage too.
+
+#### It is a proposal problem, not a selection problem
+
+The fifth approach settled it. Each candidate circle was given its own camera
+fit, and the winner chosen by how much of the **whole projected pitch** landed
+on real paint — the one signal that is genuinely diagnostic, since a wrong
+circle implies a camera that puts the rest of the pitch nowhere near any
+markings.
+
+Support scores came back at **0.11-0.23**, against a 0.45 threshold. The check
+was working correctly: it recognised that *every* candidate was wrong. All four
+frames would abstain.
+
+That reframes the failure. Three of the strategies above were answering "which
+ellipse do I pick?" when **the true circle is never among the proposals**.
+Better selection among wrong candidates cannot help.
+
+Proposal generation is the thing to fix. Local 5-point sampling over line-mask
+pixels leaves penalty arcs, the D, worn paint and mowing stripes in play, and a
+conic fitted to five points spanning a short arc is badly under-constrained, so
+it produces large ellipses that happen to pass through them. The centre circle's
+arc is present in those pixels; it is simply never sampled cleanly enough to
+win.
+
+**Seeding RANSAC from connected arc segments rather than raw pixels** — so each
+sample spans a genuine curve instead of scattered points — is the untried
+approach and the one worth attempting next.
+
 The contour-based path is retained in the meantime.
 
-The original reasoning still holds — it needs no erasure and tolerates the halfway line
-crossing the circle. That is the next concrete step and the last known blocker
-on this calibrator.
+The original reasoning for conic fitting still holds: it needs no erasure and
+tolerates the halfway line crossing the circle. Only the proposal stage is
+unsolved.
 
 ### Still unresolved
 
