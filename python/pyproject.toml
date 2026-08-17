@@ -53,10 +53,14 @@ dev = [
     "mypy>=1.10",
     "maturin>=1.6",
 ]
-all = ["offball[vision,api,dev]"]
+train = [
+    "torch>=2.2",
+]
+all = ["offball[vision,api,dev,train]"]
 
 [project.scripts]
 offball = "offball.cli:main"
+offball-train = "offball.models.train:main"
 
 [project.urls]
 Repository = "https://github.com/Shalom11z/offball"

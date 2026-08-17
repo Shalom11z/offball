@@ -48,3 +48,6 @@ checkpoints/
 .idea/
 *.swp
 .DS_Store
+
+# Trained model checkpoints — regenerate with `offball-train`
+models/
